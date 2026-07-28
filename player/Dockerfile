@@ -1,6 +1,6 @@
 # hello_world PLAYER image (the miner submission server).
 #
-# VENDORED SDK pattern: we build on FROM python:3.12-slim and COPY the vendored gym_v1/ into
+# VENDORED gym_v1 pattern: we build on FROM python:3.12-slim and COPY the vendored gym_v1/ into
 # the image — we do NOT `FROM apex-player-base` (that base image is not published to any
 # registry, so it would fail in release CI). Vendoring is what every shipped competition does.
 #

@@ -1,5 +1,5 @@
 # VENDORED from apex-competition-sdk v0.3.0 (src/apex_sdk/gym_v1/), import root rewritten
-# apex_sdk.gym_v1 -> gym_v1. Do not hand-edit; re-vendor from the SDK to update.
+# apex_sdk.gym_v1 -> gym_v1. Do not hand-edit; re-vendor from the toolkit to update.
 """Referee-side harness for gym_v1 (and custom) duels.
 
 The referee image holds the game logic. The platform launches it with the env contract

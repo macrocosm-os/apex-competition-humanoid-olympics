@@ -6,7 +6,7 @@ with the scorer.
 
 Contract:
   - The platform writes the miner submission to target_path (/app/submission.py).
-  - This server exposes /health, /reset, /act (via the SDK). The referee calls /act once per
+  - This server exposes /health, /reset, /act (via the toolkit). The referee calls /act once per
     task with the numbers to sort as the observation; the action is the sorted list.
 """
 

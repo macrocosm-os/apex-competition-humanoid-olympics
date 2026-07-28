@@ -1,5 +1,5 @@
 # VENDORED from apex-competition-sdk v0.3.0 (src/apex_sdk/gym_v1/), import root rewritten
-# apex_sdk.gym_v1 -> gym_v1. Do not hand-edit; re-vendor from the SDK to update.
+# apex_sdk.gym_v1 -> gym_v1. Do not hand-edit; re-vendor from the toolkit to update.
 """Player-side server base for gym_v1.
 
 A competition's player image implements a `Player` (loading the miner's submitted

@@ -24,17 +24,17 @@ The task is deliberately trivial — sort a list of numbers — so that nothing 
 | `player/Dockerfile`, `player/launch.py` | The **player** image: serves the miner's submission over the gym_v1 HTTP API. |
 | `player/submission.py` | The reference (baseline) submission. Not baked into the image — the platform writes the miner's version to `/app/submission.py` at run time. |
 | `referee/Dockerfile`, `referee/referee.py` | The **referee** image: holds the ground truth, drives the player, writes `/data/result.json`. |
-| `player/gym_v1/`, `referee/gym_v1/` | **Vendored** copy of the SDK's `gym_v1` package (see below). |
+| `player/gym_v1/`, `referee/gym_v1/` | **Vendored** copy of the toolkit's `gym_v1` package (see below). |
 | `.github/workflows/release.yml` | Builds, pushes by digest, and keyless-signs both images on a `v*` tag. |
 
-## The vendored SDK — this is the pattern to copy
+## The vendored `gym_v1` — this is the pattern to copy
 
-Both images **vendor** the SDK's `gym_v1/` package into this repo and build on
+Both images **vendor** the toolkit's `gym_v1/` package into this repo and build on
 `FROM python:3.12-slim`:
 
 ```dockerfile
 FROM python:3.12-slim
-COPY player/gym_v1/ /app/gym_v1/     # <- the vendored SDK
+COPY player/gym_v1/ /app/gym_v1/     # <- the vendored gym_v1
 COPY player/launch.py /app/launch.py
 ```
 
@@ -44,22 +44,22 @@ from gym_v1.referee import Referee, GameResult, RefereeContext
 from gym_v1.client import PlayerClient, PlayerError
 ```
 
-**Do not build `FROM apex-player-base` / `apex-referee-base`.** Those base images ship the SDK
+**Do not build `FROM apex-player-base` / `apex-referee-base`.** Those base images ship the toolkit
 as `apex_sdk.gym_v1`, but they are not published to any registry — the build only resolves on a
 machine that has `docker build`-ed the base locally, so it **fails in release CI**. Build-FROM-base
 is the intended future once the bases are published; vendoring is what works today and what every
 shipped competition does.
 
-The vendored files carry a provenance header naming the SDK version they came from. Don't
+The vendored files carry a provenance header naming the toolkit version they came from. Don't
 hand-edit them — to update, re-copy from
-[apex-competitions-sdk](https://github.com/macrocosm-os/apex-competitions-sdk) `src/apex_sdk/gym_v1/`
+[apex-competitions-builder](https://github.com/macrocosm-os/apex-competitions-builder) `src/apex_sdk/gym_v1/`
 and rewrite the `apex_sdk.gym_v1` import root to `gym_v1`:
 
 ```bash
-SDK=../apex-competitions-sdk
+BUILDER=../apex-competitions-builder
 for side in player referee; do
   for f in __init__ client player referee; do
-    sed 's/^from apex_sdk\.gym_v1\./from gym_v1./' "$SDK/src/apex_sdk/gym_v1/$f.py" > "$side/gym_v1/$f.py"
+    sed 's/^from apex_sdk\.gym_v1\./from gym_v1./' "$BUILDER/src/apex_sdk/gym_v1/$f.py" > "$side/gym_v1/$f.py"
   done
 done
 ```
@@ -67,7 +67,7 @@ done
 ## Validate and run locally
 
 ```bash
-pip install apex-competition-sdk        # or: pip install -e ../apex-competitions-sdk
+pip install apex-competition-sdk        # or: pip install -e ../apex-competitions-builder
 
 # 1. Validate the spec + input fixture against apex.competition.v1. No Docker.
 apex-dev preflight --spec ./spec.yaml --input fixtures/input.json
@@ -78,7 +78,7 @@ apex-dev run --spec ./spec.yaml --input fixtures/input.json \
 ```
 
 `apex-dev run` prints the plan and exits 3: referee-driven local execution (both sandboxes on a
-shared network) is not implemented in the SDK yet. Until it is, exercise the full loop by hand —
+shared network) is not implemented in the toolkit yet. Until it is, exercise the full loop by hand —
 which is also the honest test of the sandboxed leg, since it runs the player with egress blocked
 and the spec's resource limits:
 
@@ -114,10 +114,10 @@ docker rm -f hello-player && docker network rm hello-net
    keyless-signs both images.
 2. Copy the pushed digests from the Actions log into `spec.yaml` (`image.digest` and
    `referee.image.digest`).
-3. Open a [Competition onboarding issue](https://github.com/macrocosm-os/apex-competitions-sdk/issues/new?template=competition-onboarding.yml)
+3. Open a [Competition onboarding issue](https://github.com/macrocosm-os/apex-competitions-builder/issues/new?template=competition-onboarding.yml)
    with your repo URL, released tag, image refs + digests, and a filled `HANDOFF.md`. A
    Macrocosmos maintainer copies your `spec.yaml` into the private registry and activates it on
    stage, then prod.
 
 Full authoring guide, the spec schema, and the design skill:
-[macrocosm-os/apex-competitions-sdk](https://github.com/macrocosm-os/apex-competitions-sdk).
+[macrocosm-os/apex-competitions-builder](https://github.com/macrocosm-os/apex-competitions-builder).

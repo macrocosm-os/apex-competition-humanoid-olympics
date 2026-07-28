@@ -1,6 +1,6 @@
 # hello_world REFEREE image (the scorer sandbox: ground truth + scoring).
 #
-# VENDORED SDK pattern: build on FROM python:3.12-slim and COPY the vendored gym_v1/ in — we do
+# VENDORED gym_v1 pattern: build on FROM python:3.12-slim and COPY the vendored gym_v1/ in — we do
 # NOT `FROM apex-referee-base` (not published to any registry; would fail in release CI). This
 # image holds ALL ground truth (here: the expected sort order) and is isolated from the miner
 # submission. Runs by the platform convention /app/referee.py.

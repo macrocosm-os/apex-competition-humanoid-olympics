@@ -5,7 +5,7 @@
 # `.github/workflows/release.yml` and the repo name stable — changing either breaks the
 # platform's signature verification at sync time.
 #
-# The images vendor the SDK (`player/gym_v1/`, `referee/gym_v1/`) and build FROM
+# The images vendor `gym_v1` (`player/gym_v1/`, `referee/gym_v1/`) and build FROM
 # python:3.12-slim, so this workflow is self-contained — no base image or PyPI dependency.
 # It is unverified in CI; run it on a tag once and confirm the Actions log before relying
 # on it. REMAINING TODO after the first successful run: copy the pushed image digests into
