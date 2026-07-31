@@ -15,7 +15,15 @@
 #
 # Build the images first:
 #   docker build -f player/Dockerfile -t hp2-player . && docker build -f referee/Dockerfile -t hp2-referee .
+#
+# ARCHITECTURE MATTERS AS MUCH AS THE IMAGE. The release workflow runs on amd64, so the published
+# images are amd64; measuring them under emulation on an arm64 laptop reproduces neither. Override
+# PLAYER_IMAGE / REFEREE_IMAGE to measure the published digests, and run it on amd64 —
+# .github/workflows/measure-baseline.yml does exactly that on a GitHub runner.
 set -euo pipefail
+
+PLAYER_IMAGE="${PLAYER_IMAGE:-hp2-player}"
+REFEREE_IMAGE="${REFEREE_IMAGE:-hp2-referee}"
 
 ONNX="${1:?usage: $0 <policy.onnx> [seeds] }"
 SEEDS="${2:-20}"
@@ -32,11 +40,11 @@ trap cleanup EXIT
 docker network create --internal "$NET" >/dev/null
 docker run -d --name "$PLAYER" --network "$NET" --cpus 1 --memory 1.5g \
   -v "$(cd "$(dirname "$ONNX")" && pwd)/$(basename "$ONNX"):/app/submission.onnx:ro" \
-  hp2-player >/dev/null
+  "$PLAYER_IMAGE" >/dev/null
 
 # Wait for readiness from inside the network (the network has no egress by design).
 for _ in $(seq 60); do
-  docker run --rm --network "$NET" hp2-player python -c "
+  docker run --rm --network "$NET" "$PLAYER_IMAGE" python -c "
 import urllib.request,sys
 try: urllib.request.urlopen('http://$PLAYER:8000/health',timeout=2)
 except Exception: sys.exit(1)" >/dev/null 2>&1 && break
@@ -48,12 +56,12 @@ for s in $(seq 0 $((SEEDS - 1))); do
   docker run --rm --network "$NET" --cpus 1 --memory 1.5g -v "$OUTDIR/$s:/data" \
     -e MATCH_ID="measure-$s" -e SEED="$s" -e NUM_PLAYERS=1 -e PLAYER_URLS="http://$PLAYER:8000" \
     -e CONFIG_JSON="{\"courses_per_difficulty\":$PER_DIFFICULTY,\"max_steps_per_episode\":$MAX_STEPS,\"deadline_ms\":$DEADLINE_MS}" \
-    hp2-referee >/dev/null 2>&1
+    "$REFEREE_IMAGE" >/dev/null 2>&1
   echo "seed $s done" >&2
 done
 
 python3 - "$OUTDIR" "$ONNX" "$SEEDS" "$PER_DIFFICULTY" "$MAX_STEPS" "$DEADLINE_MS" <<'PY'
-import hashlib, json, pathlib, statistics, sys
+import hashlib, json, os, pathlib, platform, statistics, sys
 d, onnx, seeds, per_diff, max_steps, deadline = pathlib.Path(sys.argv[1]), sys.argv[2], *map(int, sys.argv[3:6]), int(sys.argv[6])
 scores = [json.load(open(d / str(s) / "result.json"))["raw_scores"][0] for s in range(seeds)]
 mean, sigma = statistics.mean(scores), statistics.stdev(scores)
@@ -62,6 +70,9 @@ print(json.dumps({
     "onnx": onnx,
     "onnx_sha256": hashlib.sha256(pathlib.Path(onnx).read_bytes()).hexdigest(),
     "measured_in": "referee image (two-container run, --internal network, 1 CPU / 1.5Gi)",
+    "referee_image": os.environ.get("REFEREE_IMAGE", "hp2-referee"),
+    "player_image": os.environ.get("PLAYER_IMAGE", "hp2-player"),
+    "arch": platform.machine(),
     "N": 3 * per_diff, "courses_per_difficulty": per_diff,
     "max_steps_per_episode": max_steps, "deadline_ms": deadline, "seeds": seeds,
     "scores": scores, "mean": mean, "sigma_round": sigma,

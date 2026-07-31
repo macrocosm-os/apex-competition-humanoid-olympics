@@ -14,12 +14,12 @@ resources:
 # .github/workflows/release.yml). `image` is the PLAYER image (loads + serves the miner's ONNX
 # policy).
 #
-# TODO(digests): zeros until the v0.2.0 release run completes — copy the digests from that run's
-# job summary in here. The platform pins by digest and rejects tags, so a spec with zeros will
-# not sync.
+# Pinned from the v0.2.0 release run (Actions run 30641046057). Verified: pullable by digest,
+# cosign keyless signature present, and the Fulcio cert's SAN is exactly the `cosign_identity`
+# declared below at refs/tags/v0.2.0.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-player
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  digest: sha256:0e83d1e9ad446e2f036cb63cbd4770afe59044fafb0b9254f5225247c1c47e51
 
 # ONNX artifact: the miner submits a policy graph, not code. The player image
 # validates the interface ([1,56] float32 in -> [1,17] float32 out) at load
@@ -75,7 +75,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-referee
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    digest: sha256:895114a0d7d0424ee7e756b0e5e772851f6f0787ecfa6000172f17dc9bf58b95
   timeout_s: 900
 
 signature:
