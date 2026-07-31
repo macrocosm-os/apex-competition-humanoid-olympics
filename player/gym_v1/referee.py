@@ -1,5 +1,7 @@
-# VENDORED from apex-competition-sdk v0.3.0 (src/apex_sdk/gym_v1/), import root rewritten
-# apex_sdk.gym_v1 -> gym_v1. Do not hand-edit; re-vendor from the toolkit to update.
+# VENDORED from macrocosm-os/apex-competitions-builder @ d063d9028dbec4bb15182794496f4aa2aac19d49
+# (src/apex_sdk/gym_v1/), import root rewritten apex_sdk.gym_v1 -> gym_v1.
+# Do not hand-edit; re-vendor from the toolkit to update.
+
 """Referee-side harness for gym_v1 (and custom) duels.
 
 The referee image holds the game logic. The platform launches it with the env contract
@@ -35,7 +37,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from gym_v1.client import PlayerClient
+from apex_sdk.gym_v1.client import PlayerClient
 
 RESULT_PATH = Path("/data/result.json")
 TRACE_PATH = Path("/data/trace.jsonl")

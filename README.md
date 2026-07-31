@@ -1,123 +1,107 @@
-# hello_world — the worked example Apex competition
+# Humanoid Parkour
 
-The minimal end-to-end [Apex](https://macrocosmos.ai) competition: a complete, buildable
-`apex.competition.v1` competition in as few moving parts as possible. **Fork this repo as the
-starting point for your own competition.**
+Train a control policy that gets a MuJoCo humanoid through a hurdle course —
+fast, on its feet, legs only. You submit a single **ONNX policy network**;
+each round it is evaluated on a fresh set of procedurally generated courses,
+and the fastest, most reliable policy leads the board.
 
-The task is deliberately trivial — sort a list of numbers — so that nothing distracts from the
-*structure*: a spec, a player image, a referee image, and a release workflow that signs both.
+## The task
 
-- **Submission format:** `code` — a `submission.py` exposing `sort_numbers(numbers)`.
-- **Score:** `raw_score` = fraction of tasks sorted correctly, **higher is better**.
-- **Baseline:** `player/submission.py` (a one-line `sorted()`), which scores 1.0.
+- Straight 20 m track along +x with 3–6 box hurdles across it (heights
+  0.05–0.35 m, harder tiers = taller and denser). Difficulty tiers: easy /
+  medium / hard, evaluated in equal parts.
+- Physics: the standard Gymnasium humanoid (vendored in
+  [`env/assets_humanoid.xml`](env/assets_humanoid.xml)), 17 torque actuators,
+  control at ~66 Hz (frame skip 5 × 3 ms).
+- An episode ends on: **completed** (crossed x = 20), **fell** (torso below
+  1.0 m, or any body part except the feet touching the floor — no crawling),
+  **out_of_bounds** (|y| > 2 — you can't run around the hurdles),
+  **physics_glitch** (NaN/exploding state — scores 0, don't surf solver bugs),
+  or **timeout** (900 control steps = 13.5 s; you need to average ≥ 1.5 m/s
+  to finish).
 
-> This is a teaching example, not a live competition. The image digests in `spec.yaml` are
-> placeholder zeros and it is not registered on the platform.
+## Scoring
 
-## What's in here
+Per course instance (higher is better):
 
-| Path | What it is |
-|------|-----------|
-| `spec.yaml` | The competition: kind, resources, submission contract, screening, entrypoints, images, cosign identity. |
-| `input.schema.json` | JSON Schema for the round input, `$ref`'d from the spec. |
-| `fixtures/input.json` | A round-input fixture to validate against the schema. |
-| `player/Dockerfile`, `player/launch.py` | The **player** image: serves the miner's submission over the gym_v1 HTTP API. |
-| `player/submission.py` | The reference (baseline) submission. Not baked into the image — the platform writes the miner's version to `/app/submission.py` at run time. |
-| `referee/Dockerfile`, `referee/referee.py` | The **referee** image: holds the ground truth, drives the player, writes `/data/result.json`. |
-| `player/gym_v1/`, `referee/gym_v1/` | **Vendored** copy of the toolkit's `gym_v1` package (see below). |
-| `.github/workflows/release.yml` | Builds, pushes by digest, and keyless-signs both images on a `v*` tag. |
+| Outcome | Instance score |
+|---|---|
+| Completed | `1 + (max_steps - steps) / max_steps` → (1.0, 2.0] |
+| Fell / timeout / out of bounds | fraction of course covered → [0, 1) |
+| Physics glitch / invalid action / player error | 0 |
 
-## The vendored `gym_v1` — this is the pattern to copy
+Any completion beats any non-completion; among completions, faster is better;
+partial progress still pays, so early policies have a gradient to climb.
+**raw_score = mean over all 120 course instances** (40 per difficulty). A new
+submission takes the lead by beating the top raw score by ≥ 1%.
 
-Both images **vendor** the toolkit's `gym_v1/` package into this repo and build on
-`FROM python:3.12-slim`:
+The released baseline (`baseline/baseline.onnx`, PPO, ~110M steps — see
+`baseline/PROVENANCE.md`) scores **0.696**: it runs at ~3.5 m/s, completes
+most easy courses in ~5–6 s and some mediums, but clears no hard courses and
+still falls on ~80% of the full mix. Beating it means out-running it or
+out-surviving it; a policy that reliably completes all three tiers scores
+> 1.3 and laps the field.
 
-```dockerfile
-FROM python:3.12-slim
-COPY player/gym_v1/ /app/gym_v1/     # <- the vendored gym_v1
-COPY player/launch.py /app/launch.py
-```
+Courses are derived from a per-round master seed injected into the referee:
+every submission in a round runs the exact same 120 courses, and resubmitting
+an identical policy scores identically — seed-fishing buys nothing. Next
+round, fresh courses: memorizing layouts doesn't transfer; robust locomotion
+does.
 
-```python
-from gym_v1.player import Player, serve                    # not apex_sdk.gym_v1
-from gym_v1.referee import Referee, GameResult, RefereeContext
-from gym_v1.client import PlayerClient, PlayerError
-```
+## Submission contract (ONNX only — no code)
 
-**Do not build `FROM apex-player-base` / `apex-referee-base`.** Those base images ship the toolkit
-as `apex_sdk.gym_v1`, but they are not published to any registry — the build only resolves on a
-machine that has `docker build`-ed the base locally, so it **fails in release CI**. Build-FROM-base
-is the intended future once the bases are published; vendoring is what works today and what every
-shipped competition does.
+- Exactly one input: `float32 [1, 56]` (or dynamic batch dim) — one output:
+  `float32 [1, 17]`.
+- ≤ 25 MB, **single file with weights embedded** — an export that references
+  an external `.data` sidecar will fail to load (the platform writes exactly
+  one artifact file). `train_baseline.py`'s `embed_external_data()` fixes
+  torch exports that split weights out.
+- Loaded with onnxruntime (CPU, single-threaded) by the public player image;
+  a non-conforming model is rejected at load.
+- Actions are clipped to the actuator range ±0.4 by the evaluator. Bake any
+  observation normalization into the graph — evaluation feeds raw
+  observations (see `ExportablePolicy` in
+  [`baseline/train_baseline.py`](baseline/train_baseline.py)).
 
-The vendored files carry a provenance header naming the toolkit version they came from. Don't
-hand-edit them — to update, re-copy from
-[apex-competitions-builder](https://github.com/macrocosm-os/apex-competitions-builder) `src/apex_sdk/gym_v1/`
-and rewrite the `apex_sdk.gym_v1` import root to `gym_v1`:
+Observation layout (`env/sim.py` is the source of truth):
 
-```bash
-BUILDER=../apex-competitions-builder
-for side in player referee; do
-  for f in __init__ client player referee; do
-    sed 's/^from apex_sdk\.gym_v1\./from gym_v1./' "$BUILDER/src/apex_sdk/gym_v1/$f.py" > "$side/gym_v1/$f.py"
-  done
-done
-```
+| Index | Content |
+|---|---|
+| 0 | torso y (stay inside ±2) |
+| 1 | distance to finish (20 − x) |
+| 2:24 | `qpos[2:]` — torso z, orientation quaternion, joint angles |
+| 24:47 | `qvel` |
+| 47:56 | next 3 hurdles: (Δx, height, depth) each; (50, 0, 0) padding |
 
-## Validate and run locally
+## Train locally
 
-```bash
-pip install apex-competition-sdk        # or: pip install -e ../apex-competitions-builder
-
-# 1. Validate the spec + input fixture against apex.competition.v1. No Docker.
-apex-dev preflight --spec ./spec.yaml --input fixtures/input.json
-
-# 2. Preview the resolved execution plan (player + referee images, protocol, resources).
-apex-dev run --spec ./spec.yaml --input fixtures/input.json \
-             --submission ./player/submission.py --dockerfile ./player/Dockerfile
-```
-
-`apex-dev run` prints the plan and exits 3: referee-driven local execution (both sandboxes on a
-shared network) is not implemented in the toolkit yet. Until it is, exercise the full loop by hand —
-which is also the honest test of the sandboxed leg, since it runs the player with egress blocked
-and the spec's resource limits:
+Everything used in evaluation is in this repo — same physics, same courses,
+same gates:
 
 ```bash
-# Build both images (build context = this repo root).
-docker build -f player/Dockerfile  -t hello-world-player  .
-docker build -f referee/Dockerfile -t hello-world-referee .
+pip install mujoco==3.10.0 numpy==2.3.4 gymnasium onnxruntime==1.28.0
 
-docker network create hello-net
+# Gymnasium env sampling random courses every episode:
+python - <<'PY'
+from env.gym_env import HumanoidParkourEnv
+env = HumanoidParkourEnv()
+obs, info = env.reset(seed=0)
+print(obs.shape, info)
+PY
 
-# Player: submission mounted at target_path, no egress, spec resource limits.
-docker run -d --name hello-player --network hello-net \
-  --cpus 1 --memory 512m \
-  -v "$PWD/player/submission.py:/app/submission.py:ro" \
-  hello-world-player
+# Reference PPO recipe (any algorithm works; only the ONNX artifact matters):
+python baseline/train_baseline.py --steps 20000000 --out my_policy.onnx
 
-# Referee: the platform injects these env vars and reads /data/result.json.
-docker run --rm --network hello-net \
-  -e MATCH_ID=local -e SEED=0 -e NUM_PLAYERS=1 \
-  -e PLAYER_URLS='http://hello-player:8000' \
-  -e CONFIG_JSON="$(cat fixtures/input.json)" \
-  -v "$PWD/out:/data" \
-  hello-world-referee
-
-cat out/result.json     # -> {"raw_scores": [1.0], "winner": 0, "terminal_reason": "scored", ...}
-
-docker rm -f hello-player && docker network rm hello-net
+# Score it through the real player+referee loop, exactly as evaluated:
+python tools/local_eval.py --onnx my_policy.onnx --seed 0
 ```
 
-## Ship it
+The shaped reward in `env/gym_env.py` is a starting point, not the metric —
+the leaderboard only pays for completion and speed.
 
-1. Tag a release (`git tag v0.1.0 && git push --tags`) — `release.yml` builds, pushes, and
-   keyless-signs both images.
-2. Copy the pushed digests from the Actions log into `spec.yaml` (`image.digest` and
-   `referee.image.digest`).
-3. Open a [Competition onboarding issue](https://github.com/macrocosm-os/apex-competitions-builder/issues/new?template=competition-onboarding.yml)
-   with your repo URL, released tag, image refs + digests, and a filled `HANDOFF.md`. A
-   Macrocosmos maintainer copies your `spec.yaml` into the private registry and activates it on
-   stage, then prod.
+## What you see after each round
 
-Full authoring guide, the spec schema, and the design skill:
-[macrocosm-os/apex-competitions-builder](https://github.com/macrocosm-os/apex-competitions-builder).
+Per-course breakdowns (difficulty, terminal reason, progress, steps, score)
+are revealed when a round completes, along with the round's seed. Submissions
+become downloadable by other miners after the 5-day reveal window — a real
+improvement is protected for 5 days, then becomes the field's new floor.
