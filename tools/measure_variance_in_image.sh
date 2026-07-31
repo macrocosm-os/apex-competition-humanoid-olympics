@@ -52,11 +52,25 @@ except Exception: sys.exit(1)" >/dev/null 2>&1 && break
 done
 
 for s in $(seq 0 $((SEEDS - 1))); do
+  # The referee image runs as uid 1000 and writes /data/result.json. A bind-mounted host dir is
+  # owned by the invoking user, so on Linux (CI) uid 1000 cannot write into it and every seed
+  # fails with a PermissionError. Docker Desktop on macOS masks this by remapping ownership --
+  # which is exactly why this needs to be explicit rather than discovered per-platform.
   mkdir -p "$OUTDIR/$s"
-  docker run --rm --network "$NET" --cpus 1 --memory 1.5g -v "$OUTDIR/$s:/data" \
+  chmod 777 "$OUTDIR/$s"
+  if ! docker run --rm --network "$NET" --cpus 1 --memory 1.5g -v "$OUTDIR/$s:/data" \
     -e MATCH_ID="measure-$s" -e SEED="$s" -e NUM_PLAYERS=1 -e PLAYER_URLS="http://$PLAYER:8000" \
     -e CONFIG_JSON="{\"courses_per_difficulty\":$PER_DIFFICULTY,\"max_steps_per_episode\":$MAX_STEPS,\"deadline_ms\":$DEADLINE_MS}" \
-    "$REFEREE_IMAGE" >/dev/null 2>&1
+    "$REFEREE_IMAGE" >"$OUTDIR/$s.log" 2>&1; then
+    echo "seed $s: referee exited non-zero" >&2
+    cat "$OUTDIR/$s.log" >&2
+    exit 1
+  fi
+  if [ ! -f "$OUTDIR/$s/result.json" ]; then
+    echo "seed $s: referee wrote no result.json" >&2
+    cat "$OUTDIR/$s.log" >&2
+    exit 1
+  fi
   echo "seed $s done" >&2
 done
 
