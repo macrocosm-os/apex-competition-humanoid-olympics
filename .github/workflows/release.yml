@@ -53,16 +53,27 @@ jobs:
 
       # The vendored copies must match the toolkit commit they claim, and must not reference
       # apex_sdk — the one defect that is fatal in the image and invisible on the host.
+      # The vendored copies must be the pinned toolkit's gym_v1 with the import root rewritten
+      # and nothing else. Line 1-3 of each file is the VENDORED header (which mentions apex_sdk
+      # by design), so both checks start at line 5.
       - name: Vendored gym_v1 matches the pinned toolkit
         run: |
+          rc=0
           for d in player referee; do
-            grep -rq "apex_sdk" "$d/gym_v1"/*.py && { echo "::error::$d/gym_v1 still imports apex_sdk"; exit 1; }
             for f in toolkit/src/apex_sdk/gym_v1/*.py; do
-              diff <(tail -n +5 "$d/gym_v1/$(basename "$f")") \
-                   <(perl -pe 's/\bapex_sdk\.gym_v1\b/gym_v1/g' "$f") \
-                || { echo "::error::$d/gym_v1/$(basename "$f") differs from toolkit $TOOLKIT_REF"; exit 1; }
+              b=$(basename "$f")
+              if tail -n +5 "$d/gym_v1/$b" | grep -q "apex_sdk"; then
+                echo "::error file=$d/gym_v1/$b::still references apex_sdk; the vendored package must import top-level gym_v1"
+                rc=1
+              fi
+              if ! diff -u <(tail -n +5 "$d/gym_v1/$b") \
+                           <(perl -pe 's/\bapex_sdk\.gym_v1\b/gym_v1/g' "$f"); then
+                echo "::error file=$d/gym_v1/$b::differs from toolkit $TOOLKIT_REF — re-vendor it"
+                rc=1
+              fi
             done
           done
+          exit $rc
 
   # Gate the release on a real player+referee loop, WITHOUT the toolkit installed, so the
   # vendored gym_v1 is the only gym_v1 on sys.path — exactly the situation inside the images.
@@ -74,7 +85,13 @@ jobs:
         with: { python-version: "3.12" }
       - run: python -m pip install --quiet mujoco==3.10.0 numpy==2.3.4 onnxruntime==1.28.0 onnx
       - name: apex_sdk must NOT be importable in this job
-        run: python -c "import importlib.util,sys; sys.exit('apex_sdk is installed — this job would mask a vendoring bug') if importlib.util.find_spec('apex_sdk') else print('ok: vendored gym_v1 is the only gym_v1')"
+        run: |
+          python - <<'PY'
+          import importlib.util, sys
+          if importlib.util.find_spec("apex_sdk"):
+              sys.exit("apex_sdk is installed — this job would mask a vendoring bug")
+          print("ok: the vendored gym_v1 is the only gym_v1 on sys.path")
+          PY
 
       - name: A synthetic policy scores through the full loop
         run: |
