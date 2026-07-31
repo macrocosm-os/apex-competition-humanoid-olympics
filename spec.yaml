@@ -39,10 +39,12 @@ input_schema:
 
 defaults:
   baseline_score: 0.0
-  # Measured: mean over 20 master seeds at N=120 courses with the released
-  # PPO baseline (baseline/baseline.onnx, ~110M steps — see baseline/PROVENANCE.md);
-  # per-seed numbers in HANDOFF.md §4 and variance_baseline_N120.json.
-  baseline_raw_score: 0.696
+  # Measured IN THE REFEREE IMAGE (not on a host — the two disagree by more than the 1%
+  # takeover margin, see HANDOFF.md §4): mean over 20 master seeds at N=120 courses at this
+  # round input (900-step cap, deadline_ms 500) with the released PPO baseline
+  # (baseline/baseline.onnx, sha256 5e615c33…, ~110M steps — see baseline/PROVENANCE.md).
+  # Per-seed numbers, config, and artifact digest: variance_baseline_N120_image.json.
+  baseline_raw_score: 0.702
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
   lower_is_better: false
@@ -56,7 +58,11 @@ entrypoints:
     command: ["python", "/app/launch.py", "--port", "8000"]
     network_disabled: false   # the referee must reach the player on the per-job network
     allow_internet: false
-    timeout_s: 900
+    # Deliberately LONGER than referee.timeout_s (900): the player's clock starts earlier
+    # (image start + readiness polling) and it must outlive the referee. If the player is
+    # killed first, the referee's remaining courses score player_error — a zero the
+    # submission did not earn.
+    timeout_s: 1200
     http_api:
       port: 8000
       readiness_path: /health

@@ -36,7 +36,7 @@ partial progress still pays, so early policies have a gradient to climb.
 submission takes the lead by beating the top raw score by ≥ 1%.
 
 The released baseline (`baseline/baseline.onnx`, PPO, ~110M steps — see
-`baseline/PROVENANCE.md`) scores **0.696**: it runs at ~3.5 m/s, completes
+`baseline/PROVENANCE.md`) scores **0.702**: it runs at ~3.5 m/s, completes
 most easy courses in ~5–6 s and some mediums, but clears no hard courses and
 still falls on ~80% of the full mix. Beating it means out-running it or
 out-surviving it; a policy that reliably completes all three tiers scores
@@ -79,7 +79,9 @@ Everything used in evaluation is in this repo — same physics, same courses,
 same gates:
 
 ```bash
-pip install mujoco==3.10.0 numpy==2.3.4 gymnasium onnxruntime==1.28.0
+# evaluation deps; add torch + stable-baselines3 + onnx only for the PPO recipe below
+pip install mujoco==3.10.0 numpy==2.3.4 gymnasium onnxruntime==1.28.0 onnx
+pip install torch stable-baselines3          # only needed by baseline/train_baseline.py
 
 # Gymnasium env sampling random courses every episode:
 python - <<'PY'

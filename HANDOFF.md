@@ -1,8 +1,10 @@
 # Competition Onboarding Manifest: `humanoid_parkour`
 
-Fill this document completely and attach it to your **Competition onboarding
-issue** on this repo (together with your repo URL, released tag,
-and image refs + digests). Macrocosmos reviews it, copies your `spec.yaml`
+Fill this document completely and attach it to a **[Competition onboarding
+issue](https://github.com/macrocosm-os/apex-competitions-builder/issues/new?template=competition-onboarding.yml)**
+on the toolkit repo `macrocosm-os/apex-competitions-builder` — that is the only
+way in, since the registry is private and there is nothing to PR (together with
+your repo URL, released tag, and image refs + digests). Macrocosmos reviews it, copies your `spec.yaml`
 into the private registry, and activates it on stage — where your baseline
 runs a staging round — before going live. Incomplete sections are the most
 common cause of a delayed launch.
@@ -53,9 +55,9 @@ divergence):
 | Round-generation entrypoint (`generate_round`) — or "platform seed is enough" | Platform seed is enough: the referee derives all 120 courses deterministically from `SEED` via `SeedSequence` | ☑ |
 | Cosign identity + issuer (as declared in the spec `signature` block) | https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/.github/workflows/release.yml (keyless, GitHub OIDC) | ☑ |
 | `input_schema` + input fixtures | `input.schema.json`, `fixtures/input.json` | ☑ |
-| Baseline submission (scores > 0 through the full player+referee loop) | `baseline/baseline.onnx` (PPO, ~110M steps; recipe `baseline/train_baseline.py` + extended low-LR consolidation, see `baseline/PROVENANCE.md`) — raw **0.6957** mean over 20 seeds at N=120, completes ~18% of courses | ☑ |
+| Baseline submission (scores > 0 through the full player+referee loop) | `baseline/baseline.onnx` (PPO, ~110M steps; recipe `baseline/train_baseline.py` + extended low-LR consolidation, see `baseline/PROVENANCE.md`) — raw **0.7016** mean over 20 seeds at N=120 measured in the referee image, completes ~17% of courses | ☑ |
 | Miner-facing README | `README.md` (repo root) | ☑ |
-| Evidence of a full end-to-end run (local two-image run or stage round) | Local two-process run (real player server + real referee over HTTP, vendored `gym_v1`): baseline raw **0.6464** on seed 0 at N=120, deterministic across repeats and byte-identical to the seed-0 entry in `variance_baseline_N120.json` recorded before the vendoring migration. Release CI runs the same loop as a smoke test and gates the images on it. | ☑ |
+| Evidence of a full end-to-end run (local two-image run or stage round) | **Two-container run of the built images** on an `--internal` (no-egress) Docker network at the spec's limits (1 CPU / 1.5Gi each), player fed `baseline/baseline.onnx` at `submission.target_path`, referee writing `/data/result.json`: baseline raw **0.6664** on seed 0 at N=120 in 22 s. Bit-identical across three fresh container pairs and across a 1-CPU vs 2-CPU allocation. Release CI runs the same loop (host-side) as a smoke test and gates the images on it. See §4 for the host-vs-image determinism boundary. | ☑ |
 | Toolkit version the images vendor | `macrocosm-os/apex-competitions-builder` @ `d063d9028dbec4bb15182794496f4aa2aac19d49` — `src/apex_sdk/gym_v1/` copied into `player/gym_v1/` and `referee/gym_v1/`, import root rewritten to top-level `gym_v1`, both images `FROM python:3.12-slim`. No `apex-*-base` dependency. | ☑ |
 
 Everything that affects scores must be pinned: image digests (`@sha256:`),
@@ -69,9 +71,12 @@ versions. List every pin here:
 - dependency pins: `mujoco==3.10.0`, `numpy==2.3.4` (referee);
   `onnxruntime==1.28.0`, `numpy==2.3.4` (player) — single-threaded ORT session
   for determinism
-- image digests: player `sha256:f03b38e1…c3da`, referee `sha256:4fec1245…b179`
-  (full digests in the deliverables table and spec.yaml; unchanged in v0.1.1 —
-  the baseline artifact is repo content, not image content)
+- image digests: pinned in `spec.yaml` (`image.digest`, `referee.image.digest`)
+  from the `v0.2.0` release run of `.github/workflows/release.yml`. These are
+  NEW images for this repo — the v0.1.x digests from
+  `apex-competition-humanoid-parkour` do not apply, since both images were
+  rebuilt `FROM python:3.12-slim` with a vendored `gym_v1` instead of
+  `FROM apex-*-base`.
 - baseline artifact sha256
   `5e615c33c1ad2f9f1f01e96d56af6edf72c4775ae4d2de1d4973100a0d62a6f4`
   (provenance: `baseline/PROVENANCE.md`)
@@ -89,7 +94,7 @@ onboarding.
 | `defaults.round_length_in_days` | spec | 2 — deeper contest per round on identical courses; RL policies take real time to train, so 1-day rounds would thin out | 1–2 days |
 | `defaults.submission_reveal_days` | spec | 5 — a trained locomotion policy is genuine R&D (docs guidance: 4–7 where solutions carry real IP); protects a breakthrough long enough to pay for it | 1–7 days |
 | `defaults.lower_is_better` | spec | false — score rewards completion + speed (see §1 metric); pure lower-is-better time gives no gradient before anyone completes | — |
-| `defaults.baseline_raw_score` / `baseline_score` | spec | 0.696 / 0.0 — measured: mean over 20 master seeds at N=120 with the released baseline (§4) | measured, not guessed |
+| `defaults.baseline_raw_score` / `baseline_score` | spec | 0.702 / 0.0 — measured in the REFEREE IMAGE: mean over 20 master seeds at N=120 at this round input, released baseline (§4) | measured, not guessed |
 | `resources` (per sandbox) | spec | 1 CPU / 1.5Gi — measured sim cost 0.39 ms per control step; baseline uses well under 50% | ~1 CPU / 1.5Gi (ceilings: stage 2 CPU / 2Gi, prod 4 CPU / 4Gi) |
 | `evaluate.timeout_s` / `referee.timeout_s` | spec | 900 / 900 — baseline eval measured ~15 s at N=120; worst case (survives all 900 steps on 120 courses) ≈ 5–7 min | median eval 1–10 min |
 | Per-move deadline (`deadline_ms`, gym_v1) | referee config (round input) | 500 ms — typical policy inference is ~1 ms; 500 ms tolerates jitter while forcing CPU-fast policies | 0.5–5 s |
@@ -103,38 +108,62 @@ Written evidence, not intent — run the procedure in
 
 - Instances per evaluation (N): **120** (40 easy / 40 medium / 40 hard,
   stratified). Sized up from an initial N=24 after measurement (below).
+- **Where these numbers come from.** MuJoCo and onnxruntime dispatch on CPU
+  features, so a host and the referee image do not agree to the last bit —
+  measured 1–3% apart at N=120, i.e. *wider than the 1% takeover margin*. The
+  platform runs the referee image, so every number below is measured **in the
+  built referee image**, via the real two-container loop on a no-egress
+  network at the spec's limits (`tools/measure_variance_in_image.sh`).
+  Evidence file: `variance_baseline_N120_image.json`, which records the
+  per-seed array, the round input, and the sha256 of the exact artifact
+  (`5e615c33…`, matching `baseline/PROVENANCE.md`). The three earlier
+  host-measured files (`variance_baseline_N120.json`,
+  `variance_15M_N120.json`, `variance_5M_N120.json`) are retained for the
+  reference-policy ranking evidence only — they were measured on a host at a
+  1200-step cap, so their absolute values are **not** the takeover floor and
+  must not be read as such.
 - Measured σ_round across 20 master seeds with the released baseline
-  (~110M steps, raw ≈ 0.696, completes ~18% of courses): **σ_round = 0.0333
-  at N=120** — completion/fall flips dominate the variance for mid-tier
-  policies. For the weaker 15M reference (raw ≈ 0.487, no completions):
-  σ_round = 0.0133 at N=120 (0.0228 at N=24). Per-seed arrays committed
-  alongside this file: `variance_baseline_N120.json` (released baseline),
-  `variance_15M_N120.json`, `variance_5M_N120.json`.
+  (~110M steps, raw **0.7016**, completes ~17% of courses): **σ_round =
+  0.0304 at N=120** — completion/fall flips dominate the variance for
+  mid-tier policies. For the weaker 15M reference (raw ≈ 0.487, no
+  completions): σ_round = 0.0133 at N=120 (host-measured).
 - Typical top score and the resulting takeover margin (1%): baseline-era top
   ≈ 0.70 → margin 0.0070; completion-era top ≈ 1.3–1.6 → margin 0.013–0.016.
-- Check: σ_round ≤ ¼ × margin? **No — 0.0333 > 0.0017 at baseline scores**,
-  and raising N cannot close it (σ ∝ 1/√N ⇒ N ≈ 8,800 needed; wall-time caps
-  N near 240). We report this honestly rather than tune to pass, for three
-  reasons we want to discuss at review (this is the promised sizing
-  round-trip): (a) *within-round* comparisons — including every takeover
-  decision made during a round — are exactly paired: all submissions run the
-  identical 120 courses and the evaluation is bit-deterministic (verified:
-  repeat runs, identical raw score; copies score identically), so σ_round
-  does not blur any same-round ranking; (b) σ_round only manifests as
-  cross-round score drift of a frozen leader score (±0.013 ≈ 2.7% of a
-  baseline-era score) — if the platform re-scores the incumbent leader on
-  each new round's seed, pairing removes this too, which is our preferred
-  resolution; (c) the ratio improves as the field matures: for policies that
-  complete most courses the per-course score concentrates (variance comes
-  only from the time bonus) while the margin triples.
+- Check: σ_round ≤ ¼ × margin? **No — 0.0304 vs a quarter-margin of 0.00175
+  at baseline scores, i.e. 17.3× over.** Raising N cannot close it: σ ∝ 1/√N,
+  so passing needs N ≈ 120 × 17.3² ≈ **36,000** courses, against a wall-time
+  ceiling near N=240 (measured 22 s per evaluation at N=120). We report this
+  honestly rather than tune to pass, for three reasons we want to discuss at
+  review (this is the promised sizing round-trip): (a) *within-round*
+  comparisons — including every takeover decision made during a round — are
+  exactly paired: all submissions run the identical 120 courses and the
+  evaluation is bit-deterministic **within one image** (verified: three fresh
+  container pairs and a 1-CPU vs 2-CPU allocation all produced an identical
+  raw score to the last bit), so σ_round does not blur any same-round
+  ranking; (b) σ_round manifests only as cross-round drift of a frozen leader
+  score (σ/mean = **4.3%** of a baseline-era score) — if the platform
+  re-scores the incumbent leader on each new round's seed, pairing removes
+  this too, which is our preferred resolution; (c) the ratio improves as the
+  field matures: for policies that complete most courses the per-course score
+  concentrates (variance comes only from the time bonus) while the margin
+  roughly doubles.
+- **Open question for review (cross-machine determinism).** Bit-determinism is
+  established *within* one image on one machine. It is **not** yet established
+  across worker CPU generations, and a 900-step MuJoCo rollout is chaotic
+  enough that a 1-ulp action difference can flip a completion. If the platform's
+  worker fleet is heterogeneous, this needs a paired check on two CPU
+  generations before launch — it is the same class of risk as the host/image
+  gap above, which we did measure.
 - Reference solutions rank consistently across all seeds? **Yes — 20/20 for
-  every pair.** Released baseline (0.6957 ± 0.0333) > 15M reference
+  every pair.** Released baseline (in-image 0.7016 ± 0.0304; host 0.6957 ± 0.0333) > 15M reference
   (0.4872 ± 0.0133) > 5M reference (0.2747 ± 0.0055): no overlap between any
   two on any seed, ranks never swap.
-- Total evaluation wall time at N=120: **~15 s measured for the baseline**;
+- Total evaluation wall time at N=120: **22 s measured for the baseline in
+  the referee image** (~15 s on the host);
   worst case (policy survives all 900 steps on all 120 courses) ≈ 5–7 min
   at ~0.4 ms sim + ~1–3 ms HTTP/inference per control step — fits
-  `timeout_s: 900` with margin.
+  `referee.timeout_s: 900` with margin (the player gets 1200 so it outlives
+  the referee). See §5 for the unbounded-worst-case caveat.
 
 ## 5. Threat-model questionnaire (all answers required, "n/a" must say why)
 
@@ -180,7 +209,7 @@ Written evidence, not intent — run the procedure in
    of weights scores the same or worse and cannot clear the 1% takeover bar.
    Beating the leader requires genuinely better locomotion, which is exactly
    the R&D the reveal window prices.
-7. **Cross-round leakage.** A full round reveals: 24 course layouts (expired),
+7. **Cross-round leakage.** A full round reveals: 120 course layouts (expired),
    the referee's query cadence (fixed: one `/act` per control step — nothing
    to learn), and per-course diagnostics. Courses never repeat across rounds
    (fresh master seed, ~2^128 SeedSequence space); hard-coding this round's

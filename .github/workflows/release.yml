@@ -31,46 +31,83 @@ env:
   TOOLKIT_REF: d063d9028dbec4bb15182794496f4aa2aac19d49
 
 jobs:
-  # Gate the release on a real player+referee loop: a tag that cannot score a policy must not
-  # produce signed images.
-  smoke-test:
+  # Spec validation needs the toolkit installed (apex-dev). It is a SEPARATE job from the loop
+  # test on purpose: installing the toolkit puts `apex_sdk` on sys.path, which would mask a
+  # broken vendored gym_v1 (a `from apex_sdk.gym_v1 ...` left in player/gym_v1 or referee/gym_v1
+  # resolves from site-packages on the runner and then ImportErrors inside the image, where
+  # apex_sdk does not exist). This repo shipped exactly that bug once.
+  preflight:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
+        with: { python-version: "3.12" }
       - name: Check out the toolkit (pinned, for apex-dev only)
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TOOLKIT_REPO }}
           ref: ${{ env.TOOLKIT_REF }}
           path: toolkit
+      - run: python -m pip install --quiet ./toolkit
+      - run: apex-dev preflight --spec spec.yaml --input fixtures/input.json
 
-      - name: Preflight the spec
+      # The vendored copies must match the toolkit commit they claim, and must not reference
+      # apex_sdk — the one defect that is fatal in the image and invisible on the host.
+      - name: Vendored gym_v1 matches the pinned toolkit
         run: |
-          python -m pip install --quiet ./toolkit
-          apex-dev preflight --spec spec.yaml --input fixtures/input.json
+          for d in player referee; do
+            grep -rq "apex_sdk" "$d/gym_v1"/*.py && { echo "::error::$d/gym_v1 still imports apex_sdk"; exit 1; }
+            for f in toolkit/src/apex_sdk/gym_v1/*.py; do
+              diff <(tail -n +5 "$d/gym_v1/$(basename "$f")") \
+                   <(perl -pe 's/\bapex_sdk\.gym_v1\b/gym_v1/g' "$f") \
+                || { echo "::error::$d/gym_v1/$(basename "$f") differs from toolkit $TOOLKIT_REF"; exit 1; }
+            done
+          done
 
-      # The loop itself imports the VENDORED gym_v1 (tools/local_eval.py puts referee/ on
-      # sys.path), so this exercises exactly what ships in the images.
-      - name: Full player+referee loop against a synthetic policy
+  # Gate the release on a real player+referee loop, WITHOUT the toolkit installed, so the
+  # vendored gym_v1 is the only gym_v1 on sys.path — exactly the situation inside the images.
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install --quiet mujoco==3.10.0 numpy==2.3.4 onnxruntime==1.28.0 onnx
+      - name: apex_sdk must NOT be importable in this job
+        run: python -c "import importlib.util,sys; sys.exit('apex_sdk is installed — this job would mask a vendoring bug') if importlib.util.find_spec('apex_sdk') else print('ok: vendored gym_v1 is the only gym_v1')"
+
+      - name: A synthetic policy scores through the full loop
         run: |
-          python -m pip install --quiet mujoco==3.10.0 numpy==2.3.4 onnxruntime==1.28.0 onnx
           python tools/make_test_policy.py --out /tmp/test_policy.onnx
           python tools/local_eval.py --onnx /tmp/test_policy.onnx --seed 0 \
             --courses-per-difficulty 1 --max-steps 200 | tee /tmp/eval.json
-          python -c "import json; r = json.load(open('/tmp/eval.json')); assert r['raw_scores'][0] >= 0, r"
+          # An untrained policy must produce a REAL evaluation: every course actually stepped
+          # and terminated for a physics reason. `>= 0` would be vacuous (instance_score is
+          # non-negative by construction), and player_error/invalid_action everywhere is how a
+          # broken protocol looks.
+          python - <<'PY'
+          import json
+          r = json.load(open('/tmp/eval.json'))
+          bad = {'player_error', 'invalid_action'}
+          reasons = [c['terminal_reason'] for c in r['metadata']['courses']]
+          assert r['metadata']['num_courses'] == 3, r
+          assert not (bad & set(reasons)), f"protocol broken, not just a weak policy: {reasons}"
+          assert r['steps'] > 0, r
+          print('ok:', reasons)
+          PY
 
-      - name: Baseline scores above zero
+      - name: The baseline scores above zero (it seeds the leaderboard)
         run: |
           python tools/local_eval.py --onnx baseline/baseline.onnx --seed 0 \
             --courses-per-difficulty 2 --max-steps 900 | tee /tmp/baseline.json
           python -c "import json; r = json.load(open('/tmp/baseline.json')); assert r['raw_scores'][0] > 0, r"
 
   images:
-    needs: smoke-test
+    needs: [preflight, smoke-test]
+    # Only tags produce pushed, signed images. A workflow_dispatch run on a branch would
+    # otherwise publish and sign `:main`, and a signed image the spec never pins is a
+    # liability, not a convenience.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -96,12 +133,22 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Sign (keyless)
         run: cosign sign --yes "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
+      # The platform pins by digest and rejects tags, so a released spec whose digests are
+      # zeros (or stale) cannot sync. Say so loudly in the summary rather than let a maintainer
+      # discover it at sync time.
       - name: Digest for spec.yaml
         run: |
+          DIGEST='${{ steps.build.outputs.digest }}'
           {
             echo "### ${{ matrix.name }}"
             echo '```yaml'
             echo "ref: ${{ steps.build.outputs.image }}"
-            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo "digest: $DIGEST"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "$DIGEST" spec.yaml; then
+            echo "spec.yaml already pins this ${{ matrix.name }} digest" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::spec.yaml does not pin the ${{ matrix.name }} digest just built ($DIGEST). Commit it before requesting onboarding."
+            echo "> :warning: **spec.yaml does not pin this digest yet** — commit it before requesting onboarding." >> "$GITHUB_STEP_SUMMARY"
+          fi

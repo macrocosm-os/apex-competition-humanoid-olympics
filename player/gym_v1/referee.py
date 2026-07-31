@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apex_sdk.gym_v1.client import PlayerClient
+from gym_v1.client import PlayerClient
 
 RESULT_PATH = Path("/data/result.json")
 TRACE_PATH = Path("/data/trace.jsonl")

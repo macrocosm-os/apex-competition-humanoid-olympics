@@ -29,8 +29,12 @@ from referee import ParkourReferee  # noqa: E402
 def evaluate_once(
     onnx_path: str,
     master_seed: int,
-    courses_per_difficulty: int = 8,
-    max_steps: int = 1200,
+    # Defaults MUST match the round input the leaderboard uses (spec.yaml / the referee's
+    # DEFAULT_*), or a local number is not comparable to a leaderboard score: instance_score
+    # normalizes the time bonus by max_steps, and a longer cap also turns timeouts into
+    # completions.
+    courses_per_difficulty: int = 40,
+    max_steps: int = 900,
     deadline_ms: int = 500,
     port: int = 8321,
 ) -> GameResult:
@@ -62,8 +66,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--onnx", required=True)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--courses-per-difficulty", type=int, default=8)
-    parser.add_argument("--max-steps", type=int, default=1200)
+    parser.add_argument("--courses-per-difficulty", type=int, default=40)
+    parser.add_argument("--max-steps", type=int, default=900)
     parser.add_argument("--deadline-ms", type=int, default=500)
     args = parser.parse_args()
     result = evaluate_once(args.onnx, args.seed, args.courses_per_difficulty, args.max_steps, args.deadline_ms)

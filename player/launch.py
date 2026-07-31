@@ -57,15 +57,31 @@ def _load_session() -> ort.InferenceSession:
 
 class ParkourPlayer(Player):
     def __init__(self) -> None:
-        # Load + validate at startup: a non-conforming artifact never becomes
-        # ready, so the referee sees a typed submission failure.
-        self._session = _load_session()
-        self._input_name = self._session.get_inputs()[0].name
+        # Load + validate WITHOUT raising out of __init__. Raising here kills the process
+        # before serve() binds the port, and gym_v1's Referee.run() calls wait_until_ready()
+        # OUTSIDE play_game — so a never-listening player raises PlayerError at a point where
+        # no result.json can be written, and the platform attributes a bad SUBMISSION to the
+        # REFEREE. Serving and reporting is_ready() False keeps it a typed submission failure,
+        # which is what the runtime contract asks for.
+        self._session: ort.InferenceSession | None = None
+        self._input_name: str | None = None
+        self.load_error: str | None = None
+        try:
+            self._session = _load_session()
+            self._input_name = self._session.get_inputs()[0].name
+        except Exception as e:  # noqa: BLE001 — every load failure is the submission's fault
+            self.load_error = f"{type(e).__name__}: {e}"
+            print(f"submission rejected at load: {self.load_error}", flush=True)
+
+    def is_ready(self) -> bool:
+        return self._session is not None
 
     def reset(self, match_id: str, player_index: int, seed: int, config: dict[str, Any]) -> None:
         pass  # the policy is a stateless feed-forward graph
 
     def act(self, observation: Any, deadline_ms: int) -> Any:  # noqa: ARG002
+        if self._session is None:
+            raise RuntimeError(f"submission failed to load: {self.load_error}")
         obs = np.asarray(observation, dtype=np.float32).reshape(1, OBS_DIM)
         (action,) = self._session.run(None, {self._input_name: obs})
         return np.asarray(action, dtype=np.float64).ravel().tolist()
