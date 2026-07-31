@@ -147,13 +147,23 @@ Written evidence, not intent — run the procedure in
   field matures: for policies that complete most courses the per-course score
   concentrates (variance comes only from the time bonus) while the margin
   roughly doubles.
+- **Architecture check: done, and the declared value holds.** The published
+  images are amd64 (the release runner), so the 20-seed measurement was repeated
+  on an amd64 GitHub runner against the exact digests `spec.yaml` pins
+  (`.github/workflows/measure-baseline.yml`, evidence
+  `variance_baseline_N120_amd64.json`): mean **0.7004** vs the declared 0.702, a
+  drift of **0.23%** — inside the 1% takeover margin. σ_round there is 0.0377
+  (21.5× the quarter-margin); that differs from the arm64 figure by less than the
+  sampling error of a 20-sample σ estimate (~16% relative), so the two are the
+  same failing number, not a regression. Cross-arch drift in the *mean* is
+  therefore ~0.2%, an order of magnitude smaller than the host-vs-image gap.
 - **Open question for review (cross-machine determinism).** Bit-determinism is
-  established *within* one image on one machine. It is **not** yet established
-  across worker CPU generations, and a 900-step MuJoCo rollout is chaotic
+  established *within* one image, and the amd64/arm64 means agree to 0.2%. What
+  is **not** established is bit-determinism across worker CPU *generations*
+  within amd64 (AVX-512 vs not, etc.), and a 900-step MuJoCo rollout is chaotic
   enough that a 1-ulp action difference can flip a completion. If the platform's
-  worker fleet is heterogeneous, this needs a paired check on two CPU
-  generations before launch — it is the same class of risk as the host/image
-  gap above, which we did measure.
+  worker fleet is heterogeneous, this wants a paired check on two CPU
+  generations before launch.
 - Reference solutions rank consistently across all seeds? **Yes — 20/20 for
   every pair.** Released baseline (in-image 0.7016 ± 0.0304; host 0.6957 ± 0.0333) > 15M reference
   (0.4872 ± 0.0133) > 5M reference (0.2747 ± 0.0055): no overlap between any
