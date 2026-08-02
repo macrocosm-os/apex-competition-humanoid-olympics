@@ -36,6 +36,7 @@ def evaluate_once(
     courses_per_difficulty: int = 40,
     max_steps: int = 900,
     deadline_ms: int = 500,
+    energy_budget_j: float = 0.0,   # 0 = off, matching the referee default
     port: int = 8321,
 ) -> GameResult:
     server = subprocess.Popen(
@@ -52,6 +53,7 @@ def evaluate_once(
                 "courses_per_difficulty": courses_per_difficulty,
                 "max_steps_per_episode": max_steps,
                 "deadline_ms": deadline_ms,
+                "energy_budget_j": energy_budget_j,
             },
             player_urls=[client.base_url],
             num_players=1,
@@ -69,6 +71,9 @@ if __name__ == "__main__":
     parser.add_argument("--courses-per-difficulty", type=int, default=40)
     parser.add_argument("--max-steps", type=int, default=900)
     parser.add_argument("--deadline-ms", type=int, default=500)
+    parser.add_argument("--energy-budget-j", type=float, default=0.0,
+                        help="joules of joint work per course; 0 disables the gate")
     args = parser.parse_args()
-    result = evaluate_once(args.onnx, args.seed, args.courses_per_difficulty, args.max_steps, args.deadline_ms)
+    result = evaluate_once(args.onnx, args.seed, args.courses_per_difficulty, args.max_steps,
+                           args.deadline_ms, args.energy_budget_j)
     print(json.dumps(result.__dict__, indent=2))

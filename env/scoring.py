@@ -19,7 +19,7 @@ from __future__ import annotations
 def instance_score(terminal_reason: str, progress: float, steps: int, max_steps: int) -> float:
     if terminal_reason == "completed":
         return 1.0 + (max_steps - steps) / max_steps
-    if terminal_reason in ("fell", "timeout", "out_of_bounds"):
+    if terminal_reason in ("fell", "timeout", "out_of_bounds", "exhausted"):
         return progress
     # physics_glitch, invalid_action, player_error: typed zero.
     return 0.0

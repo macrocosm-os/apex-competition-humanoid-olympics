@@ -54,7 +54,7 @@ class StepResult:
 
 
 class ParkourSim:
-    def __init__(self, hurdles: list[Hurdle]):
+    def __init__(self, hurdles: list[Hurdle], energy_budget: float = 0.0):
         self.hurdles = sorted(hurdles, key=lambda h: h.x)
         self.model = mujoco.MjModel.from_xml_string(course_xml(self.hurdles))
         self.data = mujoco.MjData(self.model)
@@ -62,6 +62,8 @@ class ParkourSim:
         self._feet = {self.model.geom("left_foot").id, self.model.geom("right_foot").id}
         self.steps = 0
         self.max_x = 0.0
+        self.energy_budget = energy_budget  # joules; 0 disables the gate entirely
+        self.energy = 0.0
 
     def reset(self, seed: int) -> np.ndarray:
         mujoco.mj_resetData(self.model, self.data)
@@ -80,6 +82,13 @@ class ParkourSim:
         self.data.ctrl[:] = np.clip(a, -CTRL_RANGE, CTRL_RANGE)
         for _ in range(FRAME_SKIP):
             mujoco.mj_step(self.model, self.data)
+            # Mechanical work at the joints: sum |torque x angular velocity| dt. Absolute value,
+            # so braking costs as much as driving — no free regenerative flailing. Always
+            # accumulated (it is a free diagnostic, and you cannot calibrate a budget you cannot
+            # measure); only the GATE below is opt-in.
+            self.energy += float(
+                np.abs(self.data.actuator_force * self.data.actuator_velocity).sum()
+            ) * self.model.opt.timestep
         self.steps += 1
         self.max_x = max(self.max_x, float(self.data.qpos[0]))
         return StepResult(obs=self._obs(), terminal_reason=self._terminal(max_steps))
@@ -101,6 +110,8 @@ class ParkourSim:
             return "fell"
         if abs(qpos[1]) > TRACK_HALF_WIDTH:
             return "out_of_bounds"
+        if self.energy_budget and self.energy > self.energy_budget:
+            return "exhausted"
         if self.steps >= max_steps:
             return "timeout"
         return None

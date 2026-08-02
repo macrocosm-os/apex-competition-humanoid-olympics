@@ -54,6 +54,10 @@ class ParkourReferee(Referee):
         per_difficulty = int(cfg.get("courses_per_difficulty", DEFAULT_COURSES_PER_DIFFICULTY))
         max_steps = int(cfg.get("max_steps_per_episode", DEFAULT_MAX_STEPS))
         deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
+        # Optional exertion gate, OFF unless the round input sets it. Joules of joint work per
+        # course; exceeding it ends the run as `exhausted` and scores the progress made, exactly
+        # like a fall. Off by default so it cannot silently change a live competition's scores.
+        energy_budget = float(cfg.get("energy_budget_j", 0.0))
         player = players[0]
 
         # All courses derive from the per-round master seed: every submission
@@ -68,7 +72,7 @@ class ParkourReferee(Referee):
         courses = []
         total = 0.0
         for i, (difficulty, course_seed) in enumerate(instances):
-            sim = ParkourSim(generate_course(course_seed, difficulty))
+            sim = ParkourSim(generate_course(course_seed, difficulty), energy_budget=energy_budget)
             obs = sim.reset(seed=course_seed)
             # Nothing identifying the instance crosses into the player sandbox: the course
             # generator is public (env/course.py), so course_seed would let a submission
@@ -108,6 +112,7 @@ class ParkourReferee(Referee):
                     "progress": round(sim.progress, 4),
                     "steps": sim.steps,
                     "sim_time_s": round(sim.steps * 0.015, 2),
+                    "energy_j": round(sim.energy, 1),
                     "score": round(score, 4),
                 }
             )
@@ -123,6 +128,8 @@ class ParkourReferee(Referee):
                 "courses": courses,
                 "num_courses": len(courses),
                 "num_completed": completed,
+                "energy_budget_j": energy_budget,
+                "num_exhausted": sum(c["terminal_reason"] == "exhausted" for c in courses),
                 "eval_time_in_seconds": round(time.monotonic() - start, 1),
             },
         )
