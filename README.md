@@ -1,129 +1,78 @@
 # Humanoid Parkour
 
-Train a control policy that gets a MuJoCo humanoid through a hurdle course —
-fast, on its feet, legs only. You submit a single **ONNX policy network**;
-each round it is evaluated on a fresh set of procedurally generated courses,
-and the fastest, most reliable policy leads the board.
+An Apex competition (Bittensor Subnet 1) where miners submit an **ONNX policy** that drives a
+Unitree G1 humanoid through a procedurally generated parkour course — stairs, gaps, vaults,
+climb-ups, a crawl-under, a balance beam, and hidden low-friction patches.
 
-> ### Status — read this first
->
-> | | |
-> |---|---|
-> | **Shipped** | **`v0.2.0`** — this README, `spec.yaml`, `env/`, `player/`, `referee/`. Images built, cosign-signed, digest-pinned. The competition as it exists today. |
-> | **Proposed** | **`v0.3.0`** — redesign onto the Unitree G1 with real parkour terrain. Design and calibration only, no implementation: [`docs/v0.3.0-design.md`](docs/v0.3.0-design.md), prototype course in [`tools/course_v3.py`](tools/course_v3.py). |
->
-> v0.2.0 works end to end, but it is a **flat plane with step-over hurdles** — the tallest is
-> 0.35 m against a 1.4 m torso, so effectively the whole competition is one skill. Measured over
-> 960 course instances the baseline completes 38% of easy courses and **0% of hard** ones. Sound
-> plumbing proof, weak headline competition; v0.3.0 is the intended replacement.
->
-> Two issues are open regardless of version, both on
-> [apex-competitions-builder#26](https://github.com/macrocosm-os/apex-competitions-builder/issues/26):
-> `σ_round` is **21× the sizing criterion**, and the referee has **no wall-clock budget** — a
-> submission that survives longer can time it out, and that is attributed to us, not the miner.
->
-> Layout: [`docs/`](docs/) design · [`evidence/`](evidence/) measured sizing data ·
-> [`tools/`](tools/) local eval, measurement, and the v0.3.0 prototype.
+**Status: design and calibration. Not implemented.**
 
-## The task
+Read [`docs/v0.3.0-design.md`](docs/v0.3.0-design.md) — it is the spec for what gets built, with
+every number in it measured rather than assumed.
 
-- Straight 20 m track along +x with 3–6 box hurdles across it (heights
-  0.05–0.35 m, harder tiers = taller and denser). Difficulty tiers: easy /
-  medium / hard, evaluated in equal parts.
-- Physics: the standard Gymnasium humanoid (vendored in
-  [`env/assets_humanoid.xml`](env/assets_humanoid.xml)), 17 torque actuators,
-  control at ~66 Hz (frame skip 5 × 3 ms).
-- An episode ends on: **completed** (crossed x = 20), **fell** (torso below
-  1.0 m, or any body part except the feet touching the floor — no crawling),
-  **out_of_bounds** (|y| > 2 — you can't run around the hurdles),
-  **physics_glitch** (NaN/exploding state — scores 0, don't surf solver bugs),
-  or **timeout** (900 control steps = 13.5 s; you need to average ≥ 1.5 m/s
-  to finish).
+## The course
 
-## Scoring
+51.1 m, linear, on a raised plinth so gaps are real voids. Difficulty ramps along its length, so
+progress-based scoring gives a continuous gradient instead of discrete tiers.
 
-Per course instance (higher is better):
-
-| Outcome | Instance score |
+| Maneuver | Geometry |
 |---|---|
-| Completed | `1 + (max_steps - steps) / max_steps` → (1.0, 2.0] |
-| Fell / timeout / out of bounds | fraction of course covered → [0, 1) |
-| Physics glitch / invalid action / player error | 0 |
-
-Any completion beats any non-completion; among completions, faster is better;
-partial progress still pays, so early policies have a gradient to climb.
-**raw_score = mean over all 120 course instances** (40 per difficulty). A new
-submission takes the lead by beating the top raw score by ≥ 1%.
-
-The released baseline (`baseline/baseline.onnx`, PPO, ~110M steps — see
-`baseline/PROVENANCE.md`) scores **0.702**: it runs at ~3.5 m/s, completes
-most easy courses in ~5–6 s and some mediums, but clears no hard courses and
-still falls on ~80% of the full mix. Beating it means out-running it or
-out-surviving it; a policy that reliably completes all three tiers scores
-> 1.3 and laps the field.
-
-Courses are derived from a per-round master seed injected into the referee:
-every submission in a round runs the exact same 120 courses, and resubmitting
-an identical policy scores identically — seed-fishing buys nothing. Next
-round, fresh courses: memorizing layouts doesn't transfer; robust locomotion
-does.
-
-## Submission contract (ONNX only — no code)
-
-- Exactly one input: `float32 [1, 56]` (or dynamic batch dim) — one output:
-  `float32 [1, 17]`.
-- ≤ 25 MB, **single file with weights embedded** — an export that references
-  an external `.data` sidecar will fail to load (the platform writes exactly
-  one artifact file). `train_baseline.py`'s `embed_external_data()` fixes
-  torch exports that split weights out.
-- Loaded with onnxruntime (CPU, single-threaded) by the public player image;
-  a non-conforming model is rejected at load.
-- Actions are clipped to the actuator range ±0.4 by the evaluator. Bake any
-  observation normalization into the graph — evaluation feeds raw
-  observations (see `ExportablePolicy` in
-  [`baseline/train_baseline.py`](baseline/train_baseline.py)).
-
-Observation layout (`env/sim.py` is the source of truth):
-
-| Index | Content |
-|---|---|
-| 0 | torso y (stay inside ±2) |
-| 1 | distance to finish (20 − x) |
-| 2:24 | `qpos[2:]` — torso z, orientation quaternion, joint angles |
-| 24:47 | `qvel` |
-| 47:56 | next 3 hurdles: (Δx, height, depth) each; (50, 0, 0) padding |
-
-## Train locally
-
-Everything used in evaluation is in this repo — same physics, same courses,
-same gates:
+| on-ramp | 6 m flat, 15.4° climb over 2 m, 0.55 m sheer drop |
+| stairs up / down | rise 0.18–0.20, run 0.32–0.34 |
+| leap | 1.0 m void |
+| drop-down | 0.6 m |
+| vault | waist-high barrier |
+| climb-up | 0.55 m platform (hip height for G1) |
+| crawl-under | overhead bar at 0.75 m |
+| balance beam | 0.32 m wide, 3.5 m long |
+| slick patch | low friction, geometry identical to flat |
 
 ```bash
-# evaluation deps; add torch + stable-baselines3 + onnx only for the PPO recipe below
-pip install mujoco==3.10.0 numpy==2.3.4 gymnasium onnxruntime==1.28.0 onnx
-pip install torch stable-baselines3          # only needed by baseline/train_baseline.py
-
-# Gymnasium env sampling random courses every episode:
-python - <<'PY'
-from env.gym_env import HumanoidParkourEnv
-env = HumanoidParkourEnv()
-obs, info = env.reset(seed=0)
-print(obs.shape, info)
-PY
-
-# Reference PPO recipe (any algorithm works; only the ONNX artifact matters):
-python baseline/train_baseline.py --steps 20000000 --out my_policy.onnx
-
-# Score it through the real player+referee loop, exactly as evaluated:
-python tools/local_eval.py --onnx my_policy.onnx --seed 0
+python tools/course_v3.py     # print the layout
+python tools/preview_v3.py    # stills + flythrough (needs mujoco + ffmpeg)
 ```
 
-The shaped reward in `env/gym_env.py` is a starting point, not the metric —
-the leaderboard only pays for completion and speed.
+`preview_v3.py --walk` additionally drives the course with Unitree's stock G1 walking policy — the
+probe used to calibrate difficulty. See its docstring for the extra checkouts that needs.
 
-## What you see after each round
+## Key decisions
 
-Per-course breakdowns (difficulty, terminal reason, progress, steps, score)
-are revealed when a round completes, along with the round's seed. Submissions
-become downloadable by other miners after the 5-day reveal window — a real
-improvement is protected for 5 days, then becomes the field's new floor.
+- **Unitree G1** from `mujoco_menagerie` (29 DoF, 33.3 kg, 1.26 m). Built on the `g1_mjx.xml`
+  lineage, which has tuned collision geoms, realistic PD gains, and a hardware transfer via MuJoCo
+  Playground. Actions are **joint position targets**, not torques.
+- **ONNX submissions, free architecture.** The tensor signature is fixed; what is inside the graph
+  is not. Optional recurrent state, since friction is hidden and adaptation needs memory.
+- **Perception is a height scan**, not an obstacle oracle: 11×7 downward samples plus an 11-point
+  overhead clearance scan. Friction and segment identity are **not** observable.
+- **Arms allowed on obstacles, not on the ground** — permits vaulting and climbing, forbids
+  bear-crawling the course.
+
+## Calibration
+
+Difficulty was set by driving a real policy over the course, not by taste:
+
+- The stock G1 walker **climbs 15.4° and stalls at 20.1°**, so the on-ramp sits at 15.4° — the
+  steepest thing a naive policy can still do.
+- **Drop height is nearly free**: 0.20 m and 0.55 m end its run at the same place, because a
+  flat-ground walker has no landing controller. The on-ramp takes the full 0.55 m.
+- That policy needs **heading hold** to be usable at all — it tracks body-frame velocity with no
+  heading feedback and drifts 0.26 m sideways per metre travelled.
+- Resulting reference score: **21% progress**, dying on the on-ramp landing.
+
+## Open questions
+
+Tracked in [#1](https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/issues/1) and
+[apex-competitions-builder#26](https://github.com/macrocosm-os/apex-competitions-builder/issues/26).
+The two that block design:
+
+1. **Does the platform re-score the incumbent leader each round?** Adaptive difficulty — the thing
+   that stops the competition having a fixed ceiling — is only coherent if it does.
+2. **Is the worker fleet homogeneous in CPU generation?** A 900-step MuJoCo rollout is chaotic
+   enough that a 1-ulp difference flips a completion.
+
+## History
+
+An earlier, much simpler version of this competition (flat plane, step-over hurdles, Gymnasium
+humanoid) was built, released and signed as **`v0.2.0`**. It is preserved at the
+[`v0.2.0`](https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/tree/v0.2.0) tag
+with its images in GHCR, and is not part of this codebase. The predecessor repo
+`apex-competition-humanoid-parkour` is archived.
