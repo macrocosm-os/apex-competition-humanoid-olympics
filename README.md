@@ -1,78 +1,142 @@
 # Humanoid Parkour
 
-An Apex competition (Bittensor Subnet 1) where miners submit an **ONNX policy** that drives a
-Unitree G1 humanoid through a procedurally generated parkour course — stairs, gaps, vaults,
-climb-ups, a crawl-under, a balance beam, and hidden low-friction patches.
+An Apex competition (Bittensor Subnet 1). Miners submit an **ONNX policy** that drives a Unitree
+G1 humanoid through a 51 m parkour course: a steep on-ramp, a sheer drop, stairs, a 1 m leap over
+a real void, a vault, a hip-height climb-up, a duck-under, a balance beam, a hidden slick patch,
+and a stairway down.
 
-**Status: design and calibration. Not implemented.**
+**Nobody has finished it.** The reference policy — Unitree's own stock G1 walker — gets 21% of
+the way and falls off the first ledge.
 
-Read [`docs/v0.3.0-design.md`](docs/v0.3.0-design.md) — it is the spec for what gets built, with
-every number in it measured rather than assumed.
+| | |
+|---|---|
+| id / version | `humanoid_parkour` 0.3.0 |
+| robot | Unitree G1, 12 actuated leg DoF, 32.1 kg |
+| submission | ONNX graph, ≤ 100 MB, architecture free |
+| interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
+| evaluation | 24 fixed instances, ≤ 4000 control steps each (80 s sim) |
+| baseline | 0.2004 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
 
 ## The course
 
 51.1 m, linear, on a raised plinth so gaps are real voids. Difficulty ramps along its length, so
-progress-based scoring gives a continuous gradient instead of discrete tiers.
+progress-based scoring gives a continuous gradient rather than discrete tiers — a policy that
+gets 3 m further scores 3 m better, all the way along.
 
 | Maneuver | Geometry |
 |---|---|
-| on-ramp | 6 m flat, 15.4° climb over 2 m, 0.55 m sheer drop |
-| stairs up / down | rise 0.18–0.20, run 0.32–0.34 |
+| on-ramp | 6 m flat, 15.4° climb over 2 m, then a 0.55 m sheer drop |
+| stairs up / down | rise 0.18–0.20 m, run 0.32–0.34 m |
 | leap | 1.0 m void |
 | drop-down | 0.6 m |
 | vault | waist-high barrier |
-| climb-up | 0.55 m platform (hip height for G1) |
-| crawl-under | overhead bar at 0.75 m |
+| climb-up | 0.55 m platform (hip height for the G1) |
+| duck-under | overhead bar at 1.05 m — forces a ~0.2 m squat-walk |
 | balance beam | 0.32 m wide, 3.5 m long |
 | slick patch | low friction, geometry identical to flat |
 
+The geometry is **static and public**. What varies between instances is surface friction, and it
+is deliberately **not observable** — a policy has to feel the slip and adapt rather than read a
+number. That is why the interface carries recurrent state.
+
 ```bash
-python tools/course_v3.py     # print the layout
+python -m env.course          # print the layout
 python tools/preview_v3.py    # stills + flythrough (needs mujoco + ffmpeg)
 ```
 
-`preview_v3.py --walk` additionally drives the course with Unitree's stock G1 walking policy — the
-probe used to calibrate difficulty. See its docstring for the extra checkouts that needs.
+## Scoring
 
-## Key decisions
+Per instance, higher is better:
 
-- **Unitree G1** from `mujoco_menagerie` (29 DoF, 33.3 kg, 1.26 m). Built on the `g1_mjx.xml`
-  lineage, which has tuned collision geoms, realistic PD gains, and a hardware transfer via MuJoCo
-  Playground. Actions are **joint position targets**, not torques.
-- **ONNX submissions, free architecture.** The tensor signature is fixed; what is inside the graph
-  is not. Optional recurrent state, since friction is hidden and adaptation needs memory.
-- **Perception is a height scan**, not an obstacle oracle: 11×7 downward samples plus an 11-point
-  overhead clearance scan. Friction and segment identity are **not** observable.
-- **Arms allowed on obstacles, not on the ground** — permits vaulting and climbing, forbids
-  bear-crawling the course.
+| Outcome | Score |
+|---|---|
+| completed | `1.0 + (max_steps - steps) / max_steps` → (1.0, 2.0] |
+| fell / timeout / out_of_bounds | `progress`, the fraction of the course covered → [0.0, 1.0) |
+| physics_glitch / invalid / player error | 0.0 |
 
-## Calibration
+`raw_score` is the mean over the 24 instances. Any completion outranks any non-completion, faster
+completions outrank slower ones, and partial progress gives non-finishers a training gradient.
 
-Difficulty was set by driving a real policy over the course, not by taste:
+## Why the evaluation suite is fixed
 
-- The stock G1 walker **climbs 15.4° and stalls at 20.1°**, so the on-ramp sits at 15.4° — the
-  steepest thing a naive policy can still do.
-- **Drop height is nearly free**: 0.20 m and 0.55 m end its run at the same place, because a
-  flat-ground walker has no landing controller. The on-ramp takes the full 0.55 m.
-- That policy needs **heading hold** to be usable at all — it tracks body-frame velocity with no
-  heading feedback and drifts 0.26 m sideways per metre travelled.
-- Resulting reference score: **21% progress**, dying on the on-ramp landing.
+The 24 instances are a pure function of `(index, count)` — **not** of the platform's per-round
+seed (`env/sim.instance_spec`). This is the load-bearing design decision, so it is worth stating
+plainly.
 
-## Open questions
+The course is static and public, so a per-round seed would buy no secrecy. All it would buy is
+score noise, and score noise is what sets the takeover margin. Measured per-instance stdev is
+**0.0176**; against a 1% takeover margin of 0.002, resolving a genuine 1% improvement through a
+randomised suite would need **~1400 instances**, which does not fit the referee's 900 s budget.
 
-Tracked in [#1](https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/issues/1) and
-[apex-competitions-builder#26](https://github.com/macrocosm-os/apex-competitions-builder/issues/26).
-The two that block design:
+A fixed suite makes a given policy score identically every round. Verified: `SEED=777` and
+`SEED=999888` both produce `0.2004409785`, bit for bit. Round-to-round variance is **zero**, so
+takeover is decided by skill.
 
-1. **Does the platform re-score the incumbent leader each round?** Adaptive difficulty — the thing
-   that stops the competition having a fixed ceiling — is only coherent if it does.
-2. **Is the worker fleet homogeneous in CPU generation?** A 900-step MuJoCo rollout is chaotic
-   enough that a 1-ulp difference flips a completion.
+Coverage comes from stratification instead of randomness — friction levels are spread evenly
+across the range, so 24 instances sample the whole grippy-to-slippery continuum rather than
+clustering wherever a draw landed.
+
+## Perception
+
+The policy sees proprioception (projected gravity, base velocities, joint angles and velocities,
+its own last action, a gait clock), its pose on the track (heading, lateral offset, distance to
+the finish), and terrain:
+
+- **height scan** — a 9×5 grid of downward samples in the robot's yaw frame, from 0.4 m behind to
+  1.6 m ahead, given relative to the pelvis
+- **overhead clearance** — 7 upward samples ahead, which is how the duck-under is visible
+
+It does not get an obstacle oracle. There is no "a leap starts in 1.2 m" channel, no segment
+identity, and no friction. Full layout in [`env/sim.py`](env/sim.py).
+
+## Submitting
+
+The tensor signature is fixed; the graph is not. Recurrent nets, ensembles, whatever fits in the
+per-step deadline. `state_in`/`state_out` are your own opaque per-episode memory — zeroed on
+reset, fed back each step. A feed-forward policy ignores `state_in` and returns zeros.
+
+Off-the-shelf G1 locomotion policies are a reasonable starting point and that is exactly what the
+baseline is, but none of them can see terrain, so none of them will get past the on-ramp without
+retraining.
+
+## Repo layout
+
+```
+env/            course, physics, perception, gates, scoring  (referee image)
+  assets/       vendored Unitree G1 12-DoF model + collision meshes (BSD-3)
+player/         ONNX serving + interface validation           (player image)
+referee/        match driver, fault attribution
+baseline/       the reference policy and where its number came from
+tools/          baseline export, local eval, course preview
+docs/           design notes
+spec.yaml       the competition manifest
+```
+
+## Running it end to end
+
+```bash
+docker build -f referee/Dockerfile -t hp-referee .
+docker build -f player/Dockerfile  -t hp-player  .
+
+docker network create hpnet
+docker run -d --name hp-p --network hpnet \
+  -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" hp-player
+
+mkdir -p /tmp/hpdata && chmod 777 /tmp/hpdata
+docker run --rm --network hpnet -v /tmp/hpdata:/data \
+  -e MATCH_ID=local -e SEED=1 -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
+  -e CONFIG_JSON='{"num_instances":24,"max_steps_per_episode":4000,"deadline_ms":500}' \
+  hp-referee
+jq '.raw_scores, .metadata.num_completed' /tmp/hpdata/result.json
+```
+
+Takes ~30 s with the baseline; ~110 s worst case for a policy that survives every step, against
+the referee's 900 s timeout.
 
 ## History
 
-An earlier, much simpler version of this competition (flat plane, step-over hurdles, Gymnasium
-humanoid) was built, released and signed as **`v0.2.0`**. It is preserved at the
+An earlier, much simpler version (flat plane, step-over hurdles, Gymnasium humanoid) was built,
+released and signed as **`v0.2.0`**. It is preserved at the
 [`v0.2.0`](https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/tree/v0.2.0) tag
 with its images in GHCR, and is not part of this codebase. The predecessor repo
 `apex-competition-humanoid-parkour` is archived.
