@@ -11,7 +11,7 @@
 # Runs the real two-container loop the platform runs: player and referee containers on an
 # --internal (no-egress) network, at the spec's resource limits, referee writing /data/result.json.
 #
-#   ./tools/measure_variance_in_image.sh baseline/baseline.onnx 20 > variance_baseline_N120_image.json
+#   ./tools/measure_variance_in_image.sh baseline/baseline.onnx 20 > evidence/variance_baseline_N120_image.json
 #
 # Build the images first:
 #   docker build -f player/Dockerfile -t hp2-player . && docker build -f referee/Dockerfile -t hp2-referee .

@@ -5,6 +5,26 @@ fast, on its feet, legs only. You submit a single **ONNX policy network**;
 each round it is evaluated on a fresh set of procedurally generated courses,
 and the fastest, most reliable policy leads the board.
 
+> ### Status — read this first
+>
+> | | |
+> |---|---|
+> | **Shipped** | **`v0.2.0`** — this README, `spec.yaml`, `env/`, `player/`, `referee/`. Images built, cosign-signed, digest-pinned. The competition as it exists today. |
+> | **Proposed** | **`v0.3.0`** — redesign onto the Unitree G1 with real parkour terrain. Design and calibration only, no implementation: [`docs/v0.3.0-design.md`](docs/v0.3.0-design.md), prototype course in [`tools/course_v3.py`](tools/course_v3.py). |
+>
+> v0.2.0 works end to end, but it is a **flat plane with step-over hurdles** — the tallest is
+> 0.35 m against a 1.4 m torso, so effectively the whole competition is one skill. Measured over
+> 960 course instances the baseline completes 38% of easy courses and **0% of hard** ones. Sound
+> plumbing proof, weak headline competition; v0.3.0 is the intended replacement.
+>
+> Two issues are open regardless of version, both on
+> [apex-competitions-builder#26](https://github.com/macrocosm-os/apex-competitions-builder/issues/26):
+> `σ_round` is **21× the sizing criterion**, and the referee has **no wall-clock budget** — a
+> submission that survives longer can time it out, and that is attributed to us, not the miner.
+>
+> Layout: [`docs/`](docs/) design · [`evidence/`](evidence/) measured sizing data ·
+> [`tools/`](tools/) local eval, measurement, and the v0.3.0 prototype.
+
 ## The task
 
 - Straight 20 m track along +x with 3–6 box hurdles across it (heights

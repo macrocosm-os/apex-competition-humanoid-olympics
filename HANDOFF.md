@@ -114,11 +114,11 @@ Written evidence, not intent — run the procedure in
   platform runs the referee image, so every number below is measured **in the
   built referee image**, via the real two-container loop on a no-egress
   network at the spec's limits (`tools/measure_variance_in_image.sh`).
-  Evidence file: `variance_baseline_N120_image.json`, which records the
+  Evidence file: `evidence/variance_baseline_N120_image.json`, which records the
   per-seed array, the round input, and the sha256 of the exact artifact
   (`5e615c33…`, matching `baseline/PROVENANCE.md`). The three earlier
-  host-measured files (`variance_baseline_N120.json`,
-  `variance_15M_N120.json`, `variance_5M_N120.json`) are retained for the
+  host-measured files (`evidence/variance_baseline_N120.json`,
+  `evidence/variance_15M_N120.json`, `evidence/variance_5M_N120.json`) are retained for the
   reference-policy ranking evidence only — they were measured on a host at a
   1200-step cap, so their absolute values are **not** the takeover floor and
   must not be read as such.
@@ -151,7 +151,7 @@ Written evidence, not intent — run the procedure in
   images are amd64 (the release runner), so the 20-seed measurement was repeated
   on an amd64 GitHub runner against the exact digests `spec.yaml` pins
   (`.github/workflows/measure-baseline.yml`, evidence
-  `variance_baseline_N120_amd64.json`): mean **0.7004** vs the declared 0.702, a
+  `evidence/variance_baseline_N120_amd64.json`): mean **0.7004** vs the declared 0.702, a
   drift of **0.23%** — inside the 1% takeover margin. σ_round there is 0.0377
   (21.5× the quarter-margin); that differs from the arm64 figure by less than the
   sampling error of a 20-sample σ estimate (~16% relative), so the two are the

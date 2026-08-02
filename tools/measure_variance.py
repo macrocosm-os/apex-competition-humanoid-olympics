@@ -6,7 +6,7 @@ Run with the trained baseline AND at least one deliberately different reference 
 they rank consistently across every seed.
 
     python tools/measure_variance.py --onnx baseline/baseline.onnx --seeds 20 \
-        --out variance_baseline_N120.json
+        --out evidence/variance_baseline_N120.json
 
 Defaults match the round input the leaderboard uses (N = 3 x 40 courses, 900-step cap). Anything
 else produces a number that is NOT the takeover floor — instance_score normalizes the time bonus

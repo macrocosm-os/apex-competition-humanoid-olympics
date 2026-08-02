@@ -70,14 +70,14 @@ jobs:
           REFEREE_IMAGE: ${{ steps.refs.outputs.referee }}
         run: |
           ./tools/measure_variance_in_image.sh baseline/baseline.onnx "${{ inputs.seeds || 20 }}" \
-            > variance_baseline_N120_amd64.json
-          cat variance_baseline_N120_amd64.json
+            > evidence/variance_baseline_N120_amd64.json
+          cat evidence/variance_baseline_N120_amd64.json
 
       - name: Compare against the spec's declared baseline_raw_score
         run: |
           python - <<'PY'
           import json, re, pathlib
-          ev = json.load(open('variance_baseline_N120_amd64.json'))
+          ev = json.load(open('evidence/variance_baseline_N120_amd64.json'))
           spec = pathlib.Path('spec.yaml').read_text()
           declared = float(re.search(r'baseline_raw_score:\s*([0-9.]+)', spec).group(1))
           mean, sigma = ev['mean'], ev['sigma_round']
@@ -103,4 +103,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: variance-baseline-amd64
-          path: variance_baseline_N120_amd64.json
+          path: evidence/variance_baseline_N120_amd64.json

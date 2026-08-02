@@ -43,7 +43,7 @@ defaults:
   # takeover margin, see HANDOFF.md §4): mean over 20 master seeds at N=120 courses at this
   # round input (900-step cap, deadline_ms 500) with the released PPO baseline
   # (baseline/baseline.onnx, sha256 5e615c33…, ~110M steps — see baseline/PROVENANCE.md).
-  # Per-seed numbers, config, and artifact digest: variance_baseline_N120_image.json.
+  # Per-seed numbers, config, and artifact digest: evidence/variance_baseline_N120_image.json.
   baseline_raw_score: 0.702
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
