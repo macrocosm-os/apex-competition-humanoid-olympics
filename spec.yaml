@@ -18,11 +18,11 @@ resources:
 # .github/workflows/release.yml). `image` is the PLAYER image (loads + serves the miner's ONNX
 # policy).
 #
-# Digests are from the v0.3.2 release run and both images verify under the cosign identity
+# Digests are from the v0.3.3 release run and both images verify under the cosign identity
 # below. The platform pins by digest and rejects tags.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-player
-  digest: sha256:badd099f99a17ac08c903b71f6b43174444fb69fce41b0b57ae07fa2af84147e
+  digest: sha256:b5552649c857a111b9d44323d1801149933587b372307288ee94f8b2d4d473d5
 
 # ONNX artifact: the miner submits a policy graph, not code. The player image validates the
 # interface at load time (obs [batch,104] + state_in [batch,256] -> action [batch,12] +
@@ -96,7 +96,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-referee
-    digest: sha256:0c3fa4c6232c42acf0e7a854435bbd35d1a1b0aa5a97327d2134cdbe779d485e
+    digest: sha256:14902b2913d7f6f6d681c83fceeffcee5181de447d3b4536dcf0b8c6c9af4c86
   timeout_s: 900
 
 signature:
