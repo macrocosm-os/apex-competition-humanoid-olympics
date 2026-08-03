@@ -1,10 +1,14 @@
 schema: apex.competition.v1
 id: humanoid_parkour
-version: 0.3.1
+version: 0.3.2
 display_name: "Humanoid Parkour"
 kind: solo
 process_type: cpu
 
+# Measured under these exact limits: referee peaks at 560 MiB (36% of 1.5Gi), player at 30 MiB.
+# Referee memory does not scale with submission quality — a policy that survives longer runs more
+# steps, and steps do not allocate — so this is close to the true ceiling, not a baseline figure
+# that better solutions will grow into.
 resources:
   cpu_limit: 1
   mem_limit: 1.5Gi

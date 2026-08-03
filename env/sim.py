@@ -46,7 +46,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from .course import (COURSE_LENGTH, PLINTH_TOP, SEGMENTS, TRACK_HALF_W, WORLD_GROUP,
+from .course import (COURSE_LENGTH, GEOM_PREFIX, PLINTH_TOP, SEGMENTS, TRACK_HALF_W, WORLD_GROUP,
                      course_xml_fragment, sample_frictions)
 
 ASSETS = pathlib.Path(__file__).parent / "assets"
@@ -100,7 +100,7 @@ class StepResult:
     terminal_reason: str | None  # None while the episode is still running
 
 
-def _scene_xml(frictions: list[float]) -> str:
+def _scene_xml(frictions: list[float] | None) -> str:
     """The robot model with the course spliced into its worldbody."""
     robot = (ASSETS / "g1_12dof.xml").read_text()
     floor = (f'    <geom name="floor" type="plane" size="80 20 0.1" pos="30 0 0" '
@@ -130,13 +130,40 @@ def instance_spec(i: int, n: int) -> tuple[float, int]:
     return (i + 0.5) / n, i
 
 
+_MODEL: mujoco.MjModel | None = None
+_COURSE_GEOMS: list[int] = []
+
+
+def _shared_model() -> tuple[mujoco.MjModel, list[int]]:
+    """Compile the scene once and reuse it for every instance.
+
+    Compiling costs ~1.1 s and a few hundred MB, because the G1's collision geometry is 27 STL
+    meshes that MuJoCo converts to convex hulls. Doing that per instance was ~26 s of a 67 s
+    evaluation and pushed the referee to 1.1 GB against a 1.5 GiB limit.
+
+    Nothing instance-specific is baked into the model any more: friction is the only thing that
+    varies, and `geom_friction` is a runtime field, so it is written per instance in __init__.
+    Instances run strictly sequentially and each gets a fresh MjData, so sharing the model is
+    safe. Verified bit-identical to per-instance compilation.
+    """
+    global _MODEL
+    if _MODEL is None:
+        _MODEL = mujoco.MjModel.from_xml_string(_scene_xml(None), _mesh_assets())
+        _MODEL.opt.timestep = PHYS_DT
+        n = sum(len(s.boxes) for s in SEGMENTS)
+        _COURSE_GEOMS.extend(_MODEL.geom(f"{GEOM_PREFIX}{i}").id for i in range(n))
+    return _MODEL, _COURSE_GEOMS
+
+
 class ParkourSim:
     def __init__(self, level: float = 0.5, seed: int = 0):
         rng = np.random.default_rng([seed, 0xC0FFEE])
         self.frictions = sample_frictions(SEGMENTS, level, rng)
         self.level = float(level)
-        self.model = mujoco.MjModel.from_xml_string(_scene_xml(self.frictions), _mesh_assets())
-        self.model.opt.timestep = PHYS_DT
+        self.model, geoms = _shared_model()
+        # Sliding friction only; the model's rolling/torsional values stay as authored.
+        for gid, mu in zip(geoms, self.frictions):
+            self.model.geom_friction[gid, 0] = mu
         self.data = mujoco.MjData(self.model)
         self._pelvis = self.model.body("pelvis").id
         # Scan rays must hit the course, not the robot. mj_ray filters by RENDER GROUP, so the

@@ -111,6 +111,30 @@ on a proprioception-plus-height-scan control problem, and it carries a specific 
 evaluation suite is fixed, so spare parameters invite memorising 24 instances rather than
 learning to walk, and that risk scales with parameter count.
 
+## The scene is compiled once, not per instance
+
+The G1's collision geometry is 27 STL meshes that MuJoCo converts to convex hulls at compile time.
+Building a fresh `MjModel` per instance took the referee to **1098 MiB of a 1.5 GiB limit (71%)**,
+against the skill's guidance that the baseline should sit under 50%. It did not OOM, but 438 MiB of
+headroom on a hard limit is not somewhere to launch from.
+
+Friction is the only thing that varies between instances, and `geom_friction` is a runtime field,
+so the scene is now compiled once and friction written per instance. Peak memory drops to
+**560 MiB (36%)**.
+
+Two things this surfaced that are worth keeping:
+
+- The change had to be proved, not assumed. Both paths were run over the full suite and the scores
+  compared exactly — bit-identical, `0.2005765356172827` either way.
+- Getting there exposed a real latent issue. Friction used to reach MuJoCo through the XML, which
+  serialised it at `%.4f`; writing the field directly used full float64 precision, and that
+  difference alone moved `raw_score` by **0.15%** — inside the 1% takeover margin. Friction values
+  are now explicitly quantised to 4 dp in `sample_frictions` so precision is a stated property of
+  the design rather than a side effect of a format string.
+
+It did **not** save wall time, contrary to the expectation that drove the change: 31 s vs 29.8 s
+for the suite. MuJoCo evidently caches mesh hull construction across compiles within a process.
+
 ## Rejected
 
 - **Checkpoint scoring.** Continuous progress along a linear course already gives a smooth

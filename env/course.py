@@ -30,6 +30,10 @@ TRACK_HALF_W = 1.2
 # still renders without special options; the robot occupies groups 0 (collision) and 1 (visual).
 WORLD_GROUP = 2
 
+# Course geoms are named "course_<i>" in emission order, so friction can be set on the compiled
+# model rather than baked into the XML.
+GEOM_PREFIX = "course_"
+
 # On-ramp shape, measured against the stock G1 walker (see docs/design.md): it climbs
 # 15.4 deg but stalls at 20.1 deg, so this is the steepest short climb a naive policy can still
 # manage. Drop height barely matters — 0.20 m and 0.55 m both end its run — so we take the full
@@ -153,7 +157,10 @@ def course_xml_fragment(segs, frictions=None):
             cx, cy, cz, sx, sy, sz, ck = b[:7]
             euler = f' euler="0 {b[7]:.4f} 0"' if len(b) > 7 else ""
             mu = 1.0 if frictions is None else frictions[i]
-            out.append(f'    <geom type="box" pos="{cx:.3f} {cy:.3f} {cz:.3f}" '
+            # Named so the sim can set friction on the compiled model instead of recompiling
+            # it per instance. Emission order is the contract with `sample_frictions`.
+            out.append(f'    <geom name="{GEOM_PREFIX}{i}" type="box" '
+                       f'pos="{cx:.3f} {cy:.3f} {cz:.3f}" '
                        f'size="{sx:.3f} {sy:.3f} {sz:.3f}"{euler} condim="3" group="{WORLD_GROUP}" '
                        f'friction="{mu:.4f} .1 .1" rgba="{COLOR[ck]}"/>')
             i += 1
@@ -175,7 +182,12 @@ def sample_frictions(segs, level: float, rng: np.random.Generator) -> list[float
         base = hi - (hi - lo) * float(level)
         for _ in s.boxes:
             jitter = (hi - lo) * 0.08 * float(rng.uniform(-1.0, 1.0))
-            out.append(float(np.clip(base + jitter, lo, hi)))
+            # Rounded to 4 dp deliberately. These values used to reach MuJoCo through the XML,
+            # which serialised them at %.4f; they are now written straight into geom_friction.
+            # Quantising here makes the two paths agree exactly instead of differing by the
+            # serialisation rounding, which was worth 0.15% of raw_score -- inside the 1%
+            # takeover margin, so not something to leave to a format string.
+            out.append(round(float(np.clip(base + jitter, lo, hi)), 4))
     return out
 
 

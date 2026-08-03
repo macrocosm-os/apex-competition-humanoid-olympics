@@ -102,6 +102,12 @@ Off-the-shelf G1 locomotion policies are a reasonable starting point and that is
 baseline is, but none of them can see terrain, so none of them will get past the on-ramp without
 retraining.
 
+## Resource use
+
+Measured under the spec's own limits (`--cpus 1 --memory 1.5g`): referee peaks at **560 MiB of
+1536 (36%)**, player at 30 MiB. Referee memory does not grow with submission quality, so that is
+near the true ceiling rather than a floor better solutions will grow into.
+
 ## Repo layout
 
 ```
@@ -113,6 +119,7 @@ baseline/       the reference policy and where its number came from
 tools/          baseline export, local eval, course preview
 docs/           design notes
 spec.yaml       the competition manifest
+HANDOFF.md      platform-review notes: deviations, measurements, security walk
 ```
 
 ## Running it end to end
