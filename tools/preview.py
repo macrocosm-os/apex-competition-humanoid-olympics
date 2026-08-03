@@ -88,7 +88,7 @@ def render_course(sim: ParkourSim):
                                    ("02_side_elevation", COURSE_LENGTH / 2, 40, -6),
                                    ("03_onramp", 8.0, 14, -14),
                                    ("04_stairs_leap_drop", 20.5, 13, -14),
-                                   ("05_vault_climb", 27.5, 13, -14),
+                                   ("05_hurdle_stepup", 27.5, 13, -14),
                                    ("06_duck_beam_slick", 38.0, 15, -14)]:
         cam.lookat[:] = [look, 0, 1.2]
         cam.distance, cam.azimuth, cam.elevation = dist, (90 if "side" in name else 132), elev

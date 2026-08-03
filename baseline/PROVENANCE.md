@@ -72,7 +72,7 @@ ground ever asked it for one.
 
 So the honest reading of `0.2007` is **"a competent off-the-shelf locomotion policy clears the
 first 21% of this course and then falls off a ledge."** Everything past the on-ramp — the stairs,
-the 1 m leap, the vault, the climb-up, the duck-under, the beam, the slick patch — is unscored
+the 1 m leap, the hurdle, the step-up, the duck-under, the beam, the slick patch — is unscored
 territory. No policy has completed the course.
 
 ## Reproducing

@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_parkour
-version: 0.3.2
+version: 0.3.3
 display_name: "Humanoid Parkour"
 kind: solo
 process_type: cpu

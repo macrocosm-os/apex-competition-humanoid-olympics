@@ -53,8 +53,8 @@ FRICTION_SLICK = (0.12, 0.30)
 COLOR = {  # by maneuver, so a render is readable at a glance
     "flat": ".55 .57 .60 1", "ramp": ".45 .80 .55 1",
     "stairs_up": ".30 .65 .45 1", "stairs_dn": ".22 .50 .38 1",
-    "climb_up": ".85 .45 .20 1", "drop_down": ".70 .35 .18 1",
-    "leap": ".20 .20 .24 1", "vault": ".80 .25 .35 1",
+    "step_up": ".85 .45 .20 1", "drop_down": ".70 .35 .18 1",
+    "leap": ".20 .20 .24 1", "hurdle": ".80 .25 .35 1",
     "duck": ".55 .30 .75 1", "beam": ".95 .75 .20 1", "slick": ".35 .70 .95 1",
 }
 
@@ -116,13 +116,17 @@ def build_course():
     segs.append(Seg("drop_down", 0.0))
     flat(2.4)
 
-    s = Seg("vault", 1.0, [_slab(x, 1.0, top, "flat"),     # waist-high barrier, landing continues
-                           (x + 0.5, 0.0, top + 0.31, 0.09, TRACK_HALF_W, 0.31, "vault")])
+    # A 0.62 m barrier the robot must step OVER, not vault: it has no arms (env/sim.py). That is
+    # 79% of hip height, well inside the leg's 1.30 m kinematic reach.
+    s = Seg("hurdle", 1.0, [_slab(x, 1.0, top, "flat"),
+                            (x + 0.5, 0.0, top + 0.31, 0.09, TRACK_HALF_W, 0.31, "hurdle")])
     segs.append(s); x += 1.0
     flat(2.0)
 
-    plat = 0.55                                            # climb-up onto a hip-height platform
-    segs.append(Seg("climb_up", 2.2, [_slab(x, 2.2, top + plat, "climb_up")]))
+    # A 0.55 m step UP, not a climb — again, no arms to pull with. Needs ~31-63 N.m at the knee
+    # against a 139 N.m limit, so it is a torque-feasible single-leg press.
+    plat = 0.55
+    segs.append(Seg("step_up", 2.2, [_slab(x, 2.2, top + plat, "step_up")]))
     x += 2.2; top += plat
     flat(1.2)
     top -= plat                                            # and back down
@@ -197,6 +201,6 @@ if __name__ == "__main__":
     for s in SEGMENTS:
         print(f"{s.kind:12} {x:>8.2f} {s.length:>7.2f}")
         x += s.length
-    zs = [b[2] + b[5] for s in SEGMENTS for b in s.boxes if b[6] not in ("vault", "duck")]
+    zs = [b[2] + b[5] for s in SEGMENTS for b in s.boxes if b[6] not in ("hurdle", "duck")]
     print(f"\ntotal {COURSE_LENGTH:.1f} m, final deck {FINAL_DECK:.2f} m, "
           f"vertical range {max(zs) - min(zs):.2f} m, {sum(len(s.boxes) for s in SEGMENTS)} geoms")

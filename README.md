@@ -4,7 +4,7 @@
 
 An Apex competition (Bittensor Subnet 1). Miners submit an **ONNX policy** that drives a Unitree
 G1 humanoid through a 51 m parkour course: a steep on-ramp, a sheer drop, stairs, a 1 m leap over
-a real void, a vault, a hip-height climb-up, a duck-under, a balance beam, a hidden slick patch,
+a real void, a hip-high hurdle, a 0.55 m step-up, a duck-under, a balance beam, a slick patch,
 and a stairway down.
 
 **Nobody has finished it.** The reference policy — Unitree's own stock G1 walker — gets 21% of
@@ -13,11 +13,22 @@ the way and falls off the first ledge.
 | | |
 |---|---|
 | id / version | `humanoid_parkour` 0.3.0 |
-| robot | Unitree G1, 12 actuated leg DoF, 32.1 kg |
+| robot | Unitree G1, **12 actuated leg DoF only** — no arm joints, 32.1 kg |
 | submission | ONNX graph, ≤ 25 MB, architecture free |
 | interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
 | evaluation | 24 fixed instances, ≤ 4000 control steps each (80 s sim) |
 | baseline | 0.2007 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
+
+## The robot has no arms
+
+All 12 actuators are legs (hip pitch/roll/yaw, knee, ankle pitch/roll, ×2). The arms are 17.7 kg
+of collision geometry welded to the pelvis: they are present, they have mass, and they hit things
+— but nothing can move them. **Every obstacle is a leg maneuver.** There is no vaulting, no
+pulling up, and no arm swing for balance.
+
+Both tall obstacles are sized against measured leg capability, not against a robot with hands:
+the leg reaches **1.30 m** kinematically (hip pitch spans ±2.88 rad) against a 0.62 m hurdle, and
+the 0.55 m step-up needs ~31-63 N.m at the knee against a **139 N.m** limit.
 
 ## The course
 
@@ -31,8 +42,8 @@ gets 3 m further scores 3 m better, all the way along.
 | stairs up / down | rise 0.18–0.20 m, run 0.32–0.34 m |
 | leap | 1.0 m void |
 | drop-down | 0.6 m |
-| vault | waist-high barrier |
-| climb-up | 0.55 m platform (hip height for the G1) |
+| hurdle | 0.62 m barrier — stepped over, not vaulted |
+| step-up | 0.55 m platform (70% of hip height) |
 | duck-under | overhead bar at 1.05 m — forces a ~0.2 m squat-walk |
 | balance beam | 0.32 m wide, 3.5 m long |
 | slick patch | low friction, geometry identical to flat |
