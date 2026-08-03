@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_parkour
-version: 0.3.0
+version: 0.3.1
 display_name: "Humanoid Parkour"
 kind: solo
 process_type: cpu
@@ -29,7 +29,7 @@ image:
 # and it still fits a 6-layer d=256 transformer over a history window (~5M params, ~20 MB).
 #
 # It is NOT a compute limit: measured single-threaded, a 5.5M-param net runs 0.35 ms/step, so a
-# full-survival run (96,000 inferences) costs 34 s against ~790 s of slack in the referee budget.
+# full-survival run (96,000 inferences) costs 34 s against ~640 s of slack in the referee budget.
 # Even 74 MB would fit here. The cap exists because surplus capacity buys nothing on a
 # proprioception + height-scan control problem, and because the evaluation suite is FIXED
 # (env/sim.instance_spec) — spare parameters invite memorising 24 instances instead of learning
@@ -51,14 +51,19 @@ input_schema:
 
 defaults:
   baseline_score: 0.0
-  # Measured IN THE REFEREE IMAGE (not on a host — the two disagree by more than the 1% takeover
-  # margin) over the full 24-instance suite at this round input, with the released stock-walker
-  # baseline (baseline/baseline.onnx — see baseline/PROVENANCE.md).
+  # Measured IN THE REFEREE IMAGE ON NATIVE amd64 over the full 24-instance suite at this round
+  # input, with the released stock-walker baseline (baseline/baseline.onnx — see
+  # baseline/PROVENANCE.md). Exact value 0.20068353334086175.
+  #
+  # Both qualifiers are load-bearing. A host-side measurement gives 0.2006 and an arm64 build of
+  # this same image gives 0.2004 — spreads of 0.04% and 0.12% against a 1% takeover margin. It is
+  # measured by .github/workflows/measure-baseline.yml on a native amd64 runner, because published
+  # images are amd64-only and under qemu a 24-instance suite does not finish in 15 hours.
   #
   # The evaluation suite is FIXED, not seeded per round (env/sim.instance_spec), so a given
   # policy reproduces this number exactly every round: round-to-round variance is zero and 1%
   # takeover is decided by skill rather than by noise.
-  baseline_raw_score: 0.2004
+  baseline_raw_score: 0.2007
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
   lower_is_better: false
@@ -66,7 +71,7 @@ defaults:
 entrypoints:
   # The PLAYER sandbox: serves the ONNX policy over gym_v1; the referee drives it one
   # observation at a time. timeout_s must cover the whole evaluation (24 instances x <=4000
-  # control steps).
+  # control steps): measured 67 s for the baseline, ~258 s for a policy that survives every step.
   evaluate:
     command: ["python", "/app/launch.py", "--port", "8000"]
     network_disabled: false   # the referee must reach the player on the per-job network

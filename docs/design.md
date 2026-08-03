@@ -59,8 +59,8 @@ reasoning chain:
 3. The takeover margin is 1% of the baseline: **0.002**.
 4. The sizing criterion σ_round ≤ margin/4 would need **~1400 instances**. At ~1.14 ms per control
    step that is ~48 minutes, against a 900 s referee timeout. It does not fit.
-5. A fixed suite sets σ_round to **zero** instead. Verified in-image: `SEED=777` and `SEED=999888`
-   both return `0.2004409785`, bit for bit.
+5. A fixed suite sets σ_round to **zero** instead. Verified in-image: four different `SEED` values
+   all return the same score, bit for bit.
 
 The cost is that the suite is memorisable. This is accepted because the *course* is already
 memorisable — it is static and public by design — so the marginal loss is small, while the gain
@@ -94,8 +94,8 @@ Set against measurement. Single-threaded ONNX Runtime on one CPU, MLPs over the 
 | (2048, 2048) | 5.5M | 21 MB | 0.352 | 34 s |
 | (4096, 4096) | 19M | 74 MB | 1.430 | 137 s |
 
-The per-inference budget for a policy that survives every step is 8.2 ms (900 s referee timeout,
-less ~109 s of physics and HTTP, over 24 x 4000 calls). So **compute does not bind**, even at
+The per-inference budget for a policy that survives every step is ~6.7 ms (900 s referee timeout,
+less ~258 s of physics and HTTP on a worker-class amd64 CPU, over 24 x 4000 calls). So **compute does not bind**, even at
 74 MB — an earlier draft of this spec justified a 100 MB cap on compute grounds and was simply
 wrong.
 
@@ -110,8 +110,8 @@ learning to walk, and that risk scales with parameter count.
 
 - **Checkpoint scoring.** Continuous progress along a linear course already gives a smooth
   gradient; checkpoints add discontinuities and a tuning surface for no benefit.
-- **Observation batching.** Considered for evaluation cost. Unnecessary — worst case is 109 s
-  against a 900 s budget, 8× headroom.
+- **Observation batching.** Considered for evaluation cost. Unnecessary — worst case is ~258 s on
+  a native amd64 runner against a 900 s budget, 3.5× headroom.
 - **Hands-on-obstacles rules.** Moot on a legs-only robot, and the contact-based gate it needed
   was fragile. The fall gate is now geometric: pelvis clearance above the surface below it, plus
   an uprightness check.
@@ -123,7 +123,10 @@ learning to walk, and that risk scales with parameter count.
 1. **Does the platform re-score the incumbent leader each round?** With a fixed suite this is now
    a correctness question rather than a design blocker: if the incumbent's stored score was
    measured on different hardware, comparisons drift even though our suite does not.
-2. **Is the worker fleet homogeneous in CPU generation?** Scores are bit-identical within one
-   image on one architecture, but host-vs-image differs by 0.08% and amd64-vs-arm64 by ~0.2% —
-   both comparable to the 1% takeover margin. `baseline_raw_score` is therefore measured inside
-   the referee image, which handles the first case but not the second.
+2. **Is the worker fleet homogeneous in CPU generation?** This is the one real remaining risk.
+   Scores are bit-identical within one image on one architecture, but measured across
+   environments they move by amounts comparable to the 1% takeover margin: host-vs-image 0.04%,
+   amd64-vs-arm64 0.12%. `baseline_raw_score` is therefore measured in the referee image on a
+   native amd64 runner, which is what the platform runs — but if workers span CPU generations
+   with different FMA behaviour, the same policy could score differently on different workers,
+   and no amount of care on our side fixes that.

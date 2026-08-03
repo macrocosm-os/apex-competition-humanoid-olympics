@@ -33,25 +33,36 @@ and asserts the actions agree. **Measured max |delta| = 0.0e+00** — bit-identi
 
 ## What it scores
 
-Measured **inside the referee image** over the full 24-instance suite at
-`fixtures/input.json` (`num_instances: 24`, `max_steps_per_episode: 4000`, `deadline_ms: 500`):
+Measured **inside the referee image, on a native amd64 runner** over the full 24-instance suite
+at `fixtures/input.json` (`num_instances: 24`, `max_steps_per_episode: 4000`, `deadline_ms: 500`)
+by `.github/workflows/measure-baseline.yml`:
 
 ```
-raw_score        0.2004409785
+raw_score        0.20068353334086175
 instances        24
 completed        0
 furthest         10.73 m of 51.1 m
 terminal reasons fell x 24
-eval time        29.8 s
+eval time        66.8 s   (referee timeout 900 s; ~258 s worst case)
 ```
 
-The host measures 0.2006 for the same artifact — 0.08% off, which is inside the 1% takeover
-margin but not comfortably, so the spec figure is the in-image one.
+Where it is measured matters more than it looks, because all three numbers differ inside the
+1% takeover margin:
 
-Re-running with different `SEED` values (777, 999888, and two more) reproduces
-`0.2004409785` **bit for bit**. That is the point of the fixed evaluation suite
-(`env/sim.instance_spec`): round-to-round variance is zero, so takeover is decided by skill
-rather than by which instances a round happened to draw.
+| measured | raw_score | delta |
+|---|---|---|
+| referee image, native amd64 — **the spec figure** | 0.20068 | — |
+| host (arm64, no container) | 0.2006 | 0.04% |
+| referee image, arm64 build | 0.20044 | 0.12% |
+
+So it is pinned to amd64-in-image, because that is what the platform runs. It cannot be measured
+on an arm64 dev machine at all: published images are amd64-only, and under qemu emulation a
+24-instance suite did not finish in 15 hours.
+
+Within one image on one architecture it is exact. On the arm64 build, four distinct `SEED` values
+(12345, 777, 999888, and one random) all reproduce `0.2004409785` **bit for bit**. That is the point of the fixed
+evaluation suite (`env/sim.instance_spec`): round-to-round variance is zero, so takeover is
+decided by skill rather than by which instances a round happened to draw.
 
 ## Where it dies
 
@@ -59,7 +70,7 @@ Every instance ends the same way: the policy walks the 6 m run-up, climbs the 15
 falls at the 0.55 m drop on the far side. It has no landing controller, because nothing on flat
 ground ever asked it for one.
 
-So the honest reading of `0.2004` is **"a competent off-the-shelf locomotion policy clears the
+So the honest reading of `0.2007` is **"a competent off-the-shelf locomotion policy clears the
 first 21% of this course and then falls off a ledge."** Everything past the on-ramp — the stairs,
 the 1 m leap, the vault, the climb-up, the duck-under, the beam, the slick patch — is unscored
 territory. No policy has completed the course.

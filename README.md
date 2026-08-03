@@ -17,7 +17,7 @@ the way and falls off the first ledge.
 | submission | ONNX graph, ≤ 25 MB, architecture free |
 | interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
 | evaluation | 24 fixed instances, ≤ 4000 control steps each (80 s sim) |
-| baseline | 0.2004 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
+| baseline | 0.2007 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
 
 ## The course
 
@@ -70,9 +70,9 @@ score noise, and score noise is what sets the takeover margin. Measured per-inst
 **0.0176**; against a 1% takeover margin of 0.002, resolving a genuine 1% improvement through a
 randomised suite would need **~1400 instances**, which does not fit the referee's 900 s budget.
 
-A fixed suite makes a given policy score identically every round. Verified: `SEED=777` and
-`SEED=999888` both produce `0.2004409785`, bit for bit. Round-to-round variance is **zero**, so
-takeover is decided by skill.
+A fixed suite makes a given policy score identically every round. Verified: four different `SEED`
+values all produce the same score, bit for bit. Round-to-round variance is **zero**, so takeover
+is decided by skill.
 
 Coverage comes from stratification instead of randomness — friction levels are spread evenly
 across the range, so 24 instances sample the whole grippy-to-slippery continuum rather than
@@ -133,8 +133,10 @@ docker run --rm --network hpnet -v /tmp/hpdata:/data \
 jq '.raw_scores, .metadata.num_completed' /tmp/hpdata/result.json
 ```
 
-Takes ~30 s with the baseline; ~110 s worst case for a policy that survives every step, against
-the referee's 900 s timeout.
+Takes ~67 s with the baseline on a worker-class amd64 CPU, and ~258 s worst case for a policy that
+survives every step, against the referee's 900 s timeout. (An arm64 build of the same images runs
+it in ~30 s, and scores 0.12% differently — which is why `baseline_raw_score` is measured on
+amd64; see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md).)
 
 ## History
 
