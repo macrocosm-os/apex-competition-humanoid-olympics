@@ -1,4 +1,4 @@
-# Handoff — `humanoid_parkour` v0.3.2
+# Handoff — `humanoid_parkour` v0.3.3
 
 For platform review. Covers the build checklist, the places this competition deliberately
 deviates from the skill's guidance, and what is measured versus assumed.
@@ -10,6 +10,9 @@ its gait to what is coming — not one that has memorised a fixed sequence of jo
 
 Alignment checks, to run against top submissions each round:
 
+0. **Is it a leg maneuver?** Every obstacle must be cleared with legs — the robot has no arm
+   joints. If a submission appears to clear the hurdle or step-up in a way that requires arm
+   contact, that is a physics exploit, not a solution; check the playback.
 1. **Does it use perception?** Zero the height-scan channels (obs `[52:97]`) and re-score. A policy
    that relies on terrain should collapse toward the baseline; one that is replaying a trajectory
    will barely change. This is the single most diagnostic check, because the fixed course makes

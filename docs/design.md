@@ -24,6 +24,26 @@ requires a new `(id, version)`. Shipping 12-DoF means legs-only until the compet
 The trade taken: a demonstrated-solvable launch with a real baseline, over an unverifiable launch
 with arms.
 
+**Decided: launch without arms.** If the competition stagnates — miners converge and the frontier
+stops moving — arms are the escalation lever, shipped as a new competition rather than an update
+to this one (the interface break makes that unavoidable). Until then, every obstacle is a leg
+maneuver and the docs say so plainly.
+
+The corollary is that obstacle sizing must be audited against *leg* capability, not against a
+robot with hands. Measured, for the record:
+
+| | |
+|---|---|
+| leg kinematic reach | 1.30 m (hip pitch spans ±2.88 rad) |
+| knee torque limit | 139 N·m |
+| hurdle | 0.62 m — 2.1x reach margin |
+| step-up | 0.55 m — needs ~31-63 N·m, so 2.2-4.5x torque margin |
+| duck bar | 1.05 m vs 1.26 m standing height — a ~0.2 m squat |
+
+This audit is why the duck bar moved 0.75 m -> 1.05 m, and it is the check that was skipped on the
+other two segments in v0.3.0: they shipped named "vault" and "climb-up", words that presuppose
+arms. Renamed in v0.3.3; the geometry was fine, the names were not.
+
 ## On-ramp calibrated against a real policy, not taste
 
 Difficulty was set by driving the stock walker over candidate geometry:
