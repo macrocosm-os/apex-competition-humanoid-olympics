@@ -1,4 +1,4 @@
-<img width="1600" height="900" alt="01_overview_iso" src="https://github.com/user-attachments/assets/1b21f587-3f0f-4c94-a714-0c65fe05164a" />
+<img width="1267" height="625" alt="01_overview_iso" src="https://github.com/user-attachments/assets/17b9f4ca-39ef-4d15-a216-b3eee1888a43" />
 
 # Humanoid Parkour
 
