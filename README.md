@@ -1,3 +1,5 @@
+<img width="1600" height="900" alt="01_overview_iso" src="https://github.com/user-attachments/assets/1b21f587-3f0f-4c94-a714-0c65fe05164a" />
+
 # Humanoid Parkour
 
 An Apex competition (Bittensor Subnet 1). Miners submit an **ONNX policy** that drives a Unitree
