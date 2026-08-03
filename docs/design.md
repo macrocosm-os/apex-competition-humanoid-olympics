@@ -94,6 +94,11 @@ Set against measurement. Single-threaded ONNX Runtime on one CPU, MLPs over the 
 | (2048, 2048) | 5.5M | 21 MB | 0.352 | 34 s |
 | (4096, 4096) | 19M | 74 MB | 1.430 | 137 s |
 
+Re-measured on a GitHub amd64 runner (worker-class, and the number that matters): 0.012 / 0.062 /
+0.156 / 0.472 / 2.581 ms per step for the same five architectures — roughly 1.5-1.8x slower. At
+the 25 MB cap that is still ~45 s of inference against a ~640 s budget. `measure-baseline.yml`
+runs this on every dispatch and fails if the cap ever admits a model the CPU cannot run in time.
+
 The per-inference budget for a policy that survives every step is ~6.7 ms (900 s referee timeout,
 less ~258 s of physics and HTTP on a worker-class amd64 CPU, over 24 x 4000 calls). So **compute does not bind**, even at
 74 MB — an earlier draft of this spec justified a 100 MB cap on compute grounds and was simply
@@ -123,10 +128,15 @@ learning to walk, and that risk scales with parameter count.
 1. **Does the platform re-score the incumbent leader each round?** With a fixed suite this is now
    a correctness question rather than a design blocker: if the incumbent's stored score was
    measured on different hardware, comparisons drift even though our suite does not.
-2. **Is the worker fleet homogeneous in CPU generation?** This is the one real remaining risk.
-   Scores are bit-identical within one image on one architecture, but measured across
-   environments they move by amounts comparable to the 1% takeover margin: host-vs-image 0.04%,
-   amd64-vs-arm64 0.12%. `baseline_raw_score` is therefore measured in the referee image on a
-   native amd64 runner, which is what the platform runs — but if workers span CPU generations
-   with different FMA behaviour, the same policy could score differently on different workers,
-   and no amount of care on our side fixes that.
+2. **Is the worker fleet homogeneous in CPU generation?** The remaining risk, now narrowed.
+
+   Across *architectures* scores move by amounts comparable to the 1% takeover margin:
+   host-vs-image 0.04%, amd64-vs-arm64 0.12%. So `baseline_raw_score` is measured in the referee
+   image on a native amd64 runner, which is what the platform runs.
+
+   Across *machines of the same architecture* it appears to be exact. Two separate CI runs on
+   two different GitHub amd64 runners both returned `0.20068353334086175` — bit-identical, not
+   merely close. That is encouraging but not conclusive: hosted runners are likely the same CPU
+   model, so this shows same-generation reproducibility, not cross-generation. If the worker
+   fleet spans generations with different FMA or vector-width behaviour, the same policy could
+   score differently on different workers, and nothing on our side fixes that.
