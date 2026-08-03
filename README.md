@@ -14,7 +14,7 @@ the way and falls off the first ledge.
 |---|---|
 | id / version | `humanoid_parkour` 0.3.0 |
 | robot | Unitree G1, 12 actuated leg DoF, 32.1 kg |
-| submission | ONNX graph, ≤ 100 MB, architecture free |
+| submission | ONNX graph, ≤ 25 MB, architecture free |
 | interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
 | evaluation | 24 fixed instances, ≤ 4000 control steps each (80 s sim) |
 | baseline | 0.2004 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
@@ -93,8 +93,9 @@ identity, and no friction. Full layout in [`env/sim.py`](env/sim.py).
 
 ## Submitting
 
-The tensor signature is fixed; the graph is not. Recurrent nets, ensembles, whatever fits in the
-per-step deadline. `state_in`/`state_out` are your own opaque per-episode memory — zeroed on
+The tensor signature is fixed; the graph is not — recurrent nets, ensembles, transformers over a
+history window. The 25 MB cap is ~180x the size of the reference policies it is measured against
+(every Unitree humanoid walker is 0.13-0.14 MB) and is not what will stop you. `state_in`/`state_out` are your own opaque per-episode memory — zeroed on
 reset, fed back each step. A feed-forward policy ignores `state_in` and returns zeros.
 
 Off-the-shelf G1 locomotion policies are a reasonable starting point and that is exactly what the

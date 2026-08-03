@@ -24,16 +24,25 @@ image:
 # interface at load time (obs [batch,104] + state_in [batch,256] -> action [batch,12] +
 # state_out [batch,256], all float32); there is no code to screen and no Layer-2 screen image.
 #
-# 100 MB is deliberately generous. The architecture is NOT fixed — only the tensor signature is —
-# so a miner can ship a recurrent net, an ensemble, or a small transformer if they can make it
-# run inside the per-step deadline. The binding constraint is compute, not bytes.
+# 25 MB, set against measurement rather than taste. Every Unitree reference locomotion policy
+# (G1, H1, H1-2) is 0.13-0.14 MB, so this is ~180x the class of policy this task actually needs,
+# and it still fits a 6-layer d=256 transformer over a history window (~5M params, ~20 MB).
+#
+# It is NOT a compute limit: measured single-threaded, a 5.5M-param net runs 0.35 ms/step, so a
+# full-survival run (96,000 inferences) costs 34 s against ~790 s of slack in the referee budget.
+# Even 74 MB would fit here. The cap exists because surplus capacity buys nothing on a
+# proprioception + height-scan control problem, and because the evaluation suite is FIXED
+# (env/sim.instance_spec) — spare parameters invite memorising 24 instances instead of learning
+# to walk, and that risk scales with parameter count.
+#
+# The architecture itself is NOT constrained; only the tensor signature is.
 submission:
   artifact_type: onnx
-  max_size_mb: 100
+  max_size_mb: 25
   target_path: /app/submission.onnx
 
 screening:            # Layer-1 generic weights validator (onnx artifact_type)
-  max_size_mb: 100
+  max_size_mb: 25
   min_weight_bytes: 10000        # rejects near-empty graphs / constant policies
   max_code_weight_ratio: 0.1
 

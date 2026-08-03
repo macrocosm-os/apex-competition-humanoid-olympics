@@ -151,7 +151,7 @@ class ParkourReferee(Referee):
                         "load or does not match the required interface: inputs obs "
                         f"[batch, {OBS_DIM}] and state_in [batch, {STATE_DIM}], outputs action "
                         f"[batch, {ACT_DIM}] and state_out [batch, {STATE_DIM}], all float32, "
-                        "single file with weights embedded, <= 100 MB."
+                        "single file with weights embedded, <= 25 MB."
                     ),
                 },
             )

@@ -81,6 +81,31 @@ on reset and threaded by the player between `/act` calls.
 This also fell out of the baseline: the stock walker **is** an LSTM. A feed-forward-only contract
 would have made the reference policy unrepresentable.
 
+## Submission size cap: 25 MB
+
+Set against measurement. Single-threaded ONNX Runtime on one CPU, MLPs over the full
+`obs + state` input:
+
+| arch | params | size | ms/step | 96,000 inferences |
+|---|---|---|---|---|
+| (64, 32) — the reference class | 34k | 0.13 MB | 0.008 | 1 s |
+| (512, 512) | 585k | 2.2 MB | 0.040 | 4 s |
+| (1024, 1024) | 1.7M | 6.5 MB | 0.106 | 10 s |
+| (2048, 2048) | 5.5M | 21 MB | 0.352 | 34 s |
+| (4096, 4096) | 19M | 74 MB | 1.430 | 137 s |
+
+The per-inference budget for a policy that survives every step is 8.2 ms (900 s referee timeout,
+less ~109 s of physics and HTTP, over 24 x 4000 calls). So **compute does not bind**, even at
+74 MB — an earlier draft of this spec justified a 100 MB cap on compute grounds and was simply
+wrong.
+
+25 MB is chosen because every Unitree reference locomotion policy — G1, H1, H1-2 — is
+**0.13-0.14 MB**, so 25 MB is ~180x the class of policy this task needs, while still fitting a
+6-layer d=256 transformer over a history window (~5M params). Capacity beyond that buys nothing
+on a proprioception-plus-height-scan control problem, and it carries a specific cost here: the
+evaluation suite is fixed, so spare parameters invite memorising 24 instances rather than
+learning to walk, and that risk scales with parameter count.
+
 ## Rejected
 
 - **Checkpoint scoring.** Continuous progress along a linear course already gives a smooth

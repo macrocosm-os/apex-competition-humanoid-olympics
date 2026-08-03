@@ -1,0 +1,81 @@
+# Measure baseline_raw_score on a NATIVE amd64 runner, inside the real referee image.
+#
+# This exists because the number cannot be measured correctly anywhere else. Published images are
+# amd64-only; on an arm64 dev machine Docker runs them under qemu, where MuJoCo is slow enough to
+# be unusable (a 24-instance suite did not finish in 15 hours). And a host-side measurement is not
+# a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
+#
+# Run it manually, then copy raw_score into spec.yaml `defaults.baseline_raw_score`.
+name: measure-baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      num_instances:
+        description: "Instances in the suite (must match fixtures/input.json)"
+        default: "24"
+      max_steps:
+        description: "Control-step cap per instance"
+        default: "4000"
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the images under test
+        run: |
+          docker build -q -f referee/Dockerfile -t hp-referee .
+          docker build -q -f player/Dockerfile  -t hp-player  .
+
+      - name: Run the baseline through the full loop
+        run: |
+          docker network create hpnet
+          docker run -d --name hp-p --network hpnet \
+            -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" hp-player
+          # The referee runs as uid 1000 and writes result.json into this bind mount; on Linux
+          # the runner user owns it, so it needs to be world-writable. macOS Docker Desktop
+          # masks this, which is how it was missed the first time.
+          mkdir -p "$PWD/data" && chmod 777 "$PWD/data"
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health >/dev/null 2>&1 && break || sleep 2
+          done
+          docker run --rm --network hpnet -v "$PWD/data:/data" \
+            -e MATCH_ID=measure -e SEED=1 -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
+            -e CONFIG_JSON="{\"num_instances\":${{ inputs.num_instances }},\"max_steps_per_episode\":${{ inputs.max_steps }},\"deadline_ms\":500}" \
+            hp-referee
+
+      - name: Report
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open('data/result.json'))
+          m = r['metadata']
+          print('### baseline on native amd64\n')
+          print('```yaml')
+          print(f"baseline_raw_score: {r['raw_scores'][0]:.4f}")
+          print('```\n')
+          print(f"- exact: `{r['raw_scores'][0]!r}`")
+          print(f"- instances: {m['num_instances']}, completed: {m['num_completed']}")
+          print(f"- furthest: {m['furthest_m']} m")
+          print(f"- eval time: {m['eval_time_in_seconds']} s (referee timeout 900 s)")
+          reasons = {}
+          for i in m['instances']:
+              reasons[i['terminal_reason']] = reasons.get(i['terminal_reason'], 0) + 1
+          print(f"- terminal reasons: {reasons}")
+          assert r['raw_scores'][0] > 0, "baseline must score above zero"
+          PY
+
+      - name: Inference latency at the size cap, on this CPU
+        run: |
+          python -m pip install --quiet onnxruntime==1.28.0 numpy==2.3.4 mujoco==3.11.0 \
+            torch --extra-index-url https://download.pytorch.org/whl/cpu
+          # The 25 MB cap is only defensible if a model that big still fits the referee's time
+          # budget on the hardware the platform runs, not on a dev laptop. Fails loudly if not.
+          PYTHONPATH=. python tools/latency_probe.py | tee /tmp/latency.txt
+          { echo '### inference latency on this runner'; echo '```'; cat /tmp/latency.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep -q "NOT compute-bound" /tmp/latency.txt

@@ -165,8 +165,12 @@ class ParkourSim:
 
     def step(self, action, max_steps: int = DEFAULT_MAX_STEPS) -> StepResult:
         a = np.asarray(action, dtype=np.float64).ravel()
-        if a.shape != (ACT_DIM,) or not np.all(np.isfinite(a)):
-            raise InvalidAction(f"action must be {ACT_DIM} finite floats, got shape {a.shape}")
+        if a.shape != (ACT_DIM,):
+            raise InvalidAction(f"action must be {ACT_DIM} floats, got shape {a.shape}")
+        if not np.all(np.isfinite(a)):
+            # Say which, so a miner debugging a diverging policy is not left guessing.
+            bad = int(np.count_nonzero(~np.isfinite(a)))
+            raise InvalidAction(f"action must be finite; {bad} of {ACT_DIM} entries are NaN/inf")
         self._action = np.clip(a, -10.0, 10.0)
         target = self._action * ACTION_SCALE + DEFAULT_ANGLES
         for _ in range(FRAME_SKIP):
