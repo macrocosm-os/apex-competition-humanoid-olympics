@@ -67,12 +67,14 @@ head height is 1.26 m, and a deep squat only brings it to ~0.9 m. A segment no e
 pass is a wall, not an obstacle. 1.05 m forces a ~0.2 m squat-walk, which is achievable and still
 reads as a duck on playback.
 
-## Fixed evaluation suite
+## Randomised conditions on a fixed course
 
 The single most consequential decision, and the one most likely to be questioned in review.
+**It was reversed in 0.4.0**; both halves of the argument are recorded here, because the reversal
+is the point.
 
-Instances are a pure function of `(index, count)` — not of the platform's per-round seed. The
-reasoning chain:
+0.3.3 made the instance suite a pure function of `(index, count)`, ignoring the platform's
+per-round seed. The reasoning was:
 
 1. The course is static and public, so a per-round seed buys **no secrecy**.
 2. It does buy score noise. Measured per-instance stdev is **0.0176**.
@@ -82,21 +84,65 @@ reasoning chain:
 5. A fixed suite sets σ_round to **zero** instead. Verified in-image: four different `SEED` values
    all return the same score, bit for bit.
 
-The cost is that the suite is memorisable. This is accepted because the *course* is already
-memorisable — it is static and public by design — so the marginal loss is small, while the gain
-(takeover decided by skill rather than by which instances a round drew) is large. Friction levels
-are stratified across the range rather than drawn randomly, so 24 instances cover the whole
-grippy-to-slippery continuum.
+Step 1 is where it goes wrong, and it took a while to see. A per-round seed buys no secrecy *about
+the course*, which is true and irrelevant. What a fixed suite gives away is the whole evaluation:
+geometry, friction, reset noise and step count are all deterministic and all computable offline
+from this repo, so the cheapest route to the top of the leaderboard is to solve 24 known open-loop
+control problems offline and replay the trajectories. That is not a variant of the intended
+solution, it is a different and cheaper one, and it beats a real policy on the metric while
+embodying none of the goal.
 
-If the platform later re-scores the incumbent every round against the same suite, this all holds.
-If it compares scores across differently-seeded rounds, it would not have — which is why the suite
-does not depend on the seed.
+0.4.0 draws friction **and** wind per instance from the round seed instead
+(`env/sim.instance_spec`). Nothing about the geometry changes — the course stays static and
+public, which is what keeps the change small and the difficulty stable. What changes is that the
+conditions a submission will be scored under are not knowable when it is submitted, so weights
+have to encode a controller rather than a trajectory.
+
+**What this costs, stated plainly: σ_round is no longer zero, and the 0.3.3 sizing argument now
+applies to us.** Taking the measured per-instance stdev of 0.0176 as a stand-in, independent
+draws over 24 instances give σ_round ≈ 0.0176/√24 ≈ **0.0036**, against a takeover margin of
+0.002 — so the margin is *inside* the noise and the top slot will random-walk. Adding wind can
+only widen it. Two things make this survivable rather than fatal, and neither is a substitute for
+measuring it:
+
+- The platform re-scores the incumbent on the **same round input** as its challengers, so pairing
+  cancels the course-difficulty main effect. It does not cancel the policy×condition interaction.
+- Only friction and wind vary. Holding geometry fixed keeps that interaction far smaller than it
+  would be under course-composition randomisation, where a policy meets obstacles it has never
+  seen in an order it has never seen.
+
+**The measurement to run before launch** is σ_round for a policy that actually gets deep into the
+course, over ≥20 seeds, and then to set the takeover threshold (or `num_instances`) against it.
+The 0.0036 figure above is an extrapolation from a baseline whose variance is bimodal — it either
+clears the on-ramp or does not — so it is an order-of-magnitude guide, not a result.
+
+## Wind
+
+Wind is MuJoCo's own fluid model, not an applied-force hack: `opt.wind` is subtracted from each
+body's linear velocity and quadratic drag follows from `opt.density`, which 0.4.0 sets to
+1.204 kg/m³ (air at 20 °C). Two consequences worth knowing:
+
+- Drag now exists at **zero wind** too, so the baseline score moves even on a calm instance.
+- The model infers geometry from per-body equivalent-inertia boxes, with no occlusion — every body
+  sees free stream. Summed over this robot that is 0.297 m² of frontal area, so it *overestimates*
+  the true drag on a G1. Sizing the band against it is therefore conservative in the right
+  direction.
+
+The band is 0–8 m/s, uniform, direction uniform over the full circle. That is Beaufort 4 at the
+robot, which is stronger weather than it sounds: forecast wind is quoted at 10 m and drops to
+50–70% of that near the ground. It works out to 0.179 N per (m/s)², so **11.5 N at the top of the
+band — 3.6% of the G1's 315 N weight**, needing a ~2 cm shift of the centre of pressure to stand
+against. Sustained, not impulsive: the push-recovery literature's 50–300 N figures are 0.05–0.1 s
+impulses on adult-size humanoids and are not comparable.
+
+Wind is not in the observation, for the same reason friction is not: feeling a disturbance and
+adapting is the skill being paid for. It is reported per instance in post-round metadata.
 
 ## Recurrence is required by the design, not a nicety
 
-Friction varies per instance and is not observable. The only way to adapt to a slick patch is to
-remember having slipped on it. So the interface carries an opaque 256-float state vector, zeroed
-on reset and threaded by the player between `/act` calls.
+Friction and wind vary per instance and neither is observable. The only way to adapt to a slick
+patch or a crosswind is to remember having slipped or been pushed. So the interface carries an
+opaque 256-float state vector, zeroed on reset and threaded by the player between `/act` calls.
 
 This also fell out of the baseline: the stock walker **is** an LSTM. A feed-forward-only contract
 would have made the reference policy unrepresentable.
@@ -127,9 +173,13 @@ wrong.
 25 MB is chosen because every Unitree reference locomotion policy — G1, H1, H1-2 — is
 **0.13-0.14 MB**, so 25 MB is ~180x the class of policy this task needs, while still fitting a
 6-layer d=256 transformer over a history window (~5M params). Capacity beyond that buys nothing
-on a proprioception-plus-height-scan control problem, and it carries a specific cost here: the
-evaluation suite is fixed, so spare parameters invite memorising 24 instances rather than
-learning to walk, and that risk scales with parameter count.
+on a proprioception-plus-height-scan control problem.
+
+The cap used to carry a second justification — a fixed suite means spare parameters invite
+memorising 24 instances — which 0.4.0 retires. Worth recording that it was never quantitatively
+sound: 24 × 4000 steps × 12 actions is **2.3 MB in fp16**, so the payload a memoriser needs fits
+inside any cap this task would plausibly set. Randomising the conditions is what makes memorising
+worthless; the cap never did that work.
 
 ## The scene is compiled once, not per instance
 
@@ -169,10 +219,18 @@ for the suite. MuJoCo evidently caches mesh hull construction across compiles wi
 
 ## Open
 
-1. **Does the platform re-score the incumbent leader each round?** With a fixed suite this is now
-   a correctness question rather than a design blocker: if the incumbent's stored score was
-   measured on different hardware, comparisons drift even though our suite does not.
-2. **Is the worker fleet homogeneous in CPU generation?** The remaining risk, now narrowed.
+1. **Does the platform inject a fresh `seed` into the round input every round?** 0.4.0's whole
+   anti-memorisation property rests on it: a repeated seed repeats the suite exactly. `seed` is
+   `required` in `input.schema.json` so a missing one fails loudly instead of silently freezing
+   the suite, and the referee prefers the round input over the platform's `SEED` env — but
+   neither guards against the same value being sent twice. **Confirm before launch.**
+2. **Does the platform re-score the incumbent leader each round, on the same round input?**
+   Now load-bearing rather than a correctness footnote: paired scoring is what cancels the
+   round-difficulty main effect that randomised conditions introduce. See "Randomised conditions
+   on a fixed course".
+3. **What is σ_round for a policy that gets deep into the course?** The number the takeover
+   threshold should be set against, and not measurable from the baseline. See the same section.
+4. **Is the worker fleet homogeneous in CPU generation?** The remaining risk, now narrowed.
 
    Across *architectures* scores move by amounts comparable to the 1% takeover margin:
    host-vs-image 0.04%, amd64-vs-arm64 0.12%. So `baseline_raw_score` is measured in the referee
