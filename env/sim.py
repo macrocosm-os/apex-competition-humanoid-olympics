@@ -26,9 +26,9 @@ Observation (float32, OBS_DIM = 104), all in the robot's yaw frame unless noted:
 Action (float32, ACT_DIM = 12): joint position targets as offsets from the default pose,
 scaled by ACTION_SCALE and clipped to the joint limits.
 
-Surface friction varies between instances and is NOT in the observation. Adapting to a surface
-you cannot see is the point (env/course.py). The instance suite is FIXED, not drawn from the
-round seed — see `instance_spec` for why.
+Surface friction and wind vary between instances and are NOT in the observation. Adapting to
+conditions you cannot see is the point (env/course.py). Both are drawn at random from the round
+seed, so the suite differs every round — see `instance_spec`.
 
 Termination gates (each maps to a terminal_reason the miner sees post-round):
     completed       pelvis past the finish line
@@ -54,9 +54,9 @@ ASSETS = pathlib.Path(__file__).parent / "assets"
 ACT_DIM = 12
 
 # Opaque per-episode policy memory, threaded by the player between /act calls and zeroed on
-# /reset. Recurrence is not a luxury here: surface friction is randomised and NOT observable, so
-# a policy can only adapt to a slick patch by remembering that it just slipped. A feed-forward
-# submission simply returns zeros and ignores it. The stock-walker baseline is itself an LSTM.
+# /reset. Recurrence is not a luxury here: friction and wind are randomised and NEITHER is
+# observable, so a policy can only adapt by remembering that it just slipped or got pushed. A
+# feed-forward submission simply returns zeros and ignores it. The stock walker is itself an LSTM.
 STATE_DIM = 256
 
 SCAN_NX, SCAN_NY = 9, 5          # height-scan grid, 45 rays
@@ -89,6 +89,15 @@ DEFAULT_ANGLES = np.array([-0.1, 0.0, 0.0, 0.3, -0.2, 0.0,
 START_X = -0.8
 GAIT_PERIOD = 0.8
 
+# Wind, via MuJoCo's inertia-box fluid model: opt.wind is subtracted from each body's linear
+# velocity and quadratic drag follows, so it only bites with opt.density > 0. Air at 20 C.
+# This robot's equivalent-inertia boxes sum to 0.297 m^2 of frontal area, so drag is
+# 0.179 N per (m/s)^2 head-on -- 11.5 N at WIND_MAX_MS, 3.6% of the G1's 315 N weight.
+# WIND_MAX_MS is Beaufort 4 ("moderate breeze") measured AT THE ROBOT, which is stronger
+# weather than it sounds: wind at 1 m is 50-70% of the 10 m figure forecasts quote.
+AIR_DENSITY = 1.204
+WIND_MAX_MS = 8.0
+
 
 class InvalidAction(ValueError):
     """The action was not a finite ACT_DIM vector."""
@@ -112,22 +121,51 @@ def _scene_xml(frictions: list[float] | None) -> str:
     return robot.replace("</worldbody>", body + "\n  </worldbody>")
 
 
-def instance_spec(i: int, n: int) -> tuple[float, int]:
-    """The (friction level, seed) of evaluation instance `i` of `n`.
+@dataclass(frozen=True)
+class InstanceParams:
+    """The randomised conditions of one evaluation instance."""
 
-    Deliberately a pure function of (i, n) and NOTHING else — in particular not the platform's
-    per-round seed. The course is static and public, so a per-round seed would buy no secrecy;
-    all it would buy is score noise, and score noise is exactly what sets the takeover margin.
-    Measured per-instance stdev is ~0.019, so randomising the suite each round would need ~1400
-    instances to resolve a 1% improvement, which does not fit the referee's time budget. A fixed
-    suite makes a given policy score the SAME every round: round-to-round variance is zero and
-    1% takeover is decided purely by skill.
+    seed: int                # per-instance episode seed: friction jitter and reset noise
+    friction_level: float    # 0 = grippy end of the band, 1 = slippery end
+    wind_speed: float        # m/s
+    wind_dir: float          # radians; the direction the wind blows FROM, about +x
 
-    Coverage comes from stratification instead of randomness. Levels are spread evenly across
-    the friction range, so 24 instances sample the whole grippy->slippery continuum rather than
-    clustering wherever a draw happened to land.
+    @property
+    def wind(self) -> tuple[float, float, float]:
+        """World-frame air velocity for opt.wind. Horizontal only, as ground-level wind is.
+
+        dir 0 is a headwind for a robot travelling +x (air moves -x); dir pi/2 blows from +y and
+        pushes it toward -y.
+        """
+        return (-self.wind_speed * float(np.cos(self.wind_dir)),
+                -self.wind_speed * float(np.sin(self.wind_dir)), 0.0)
+
+
+def instance_spec(i: int, n: int, seed: int,
+                  wind_max: float = WIND_MAX_MS) -> InstanceParams:
+    """The conditions of evaluation instance `i` of `n`, drawn from the round `seed`.
+
+    Friction and wind are drawn at RANDOM per instance rather than taken from a fixed
+    stratified sweep, so the suite differs every round. The course geometry is static and
+    public, so a fixed suite was computable offline bit-for-bit and the cheapest route to the
+    top was memorising 24 known instances; a per-round draw makes that worthless.
+
+    The cost is score noise, and score noise is what sets the takeover margin — round-to-round
+    variance is no longer zero. See docs/design.md, "Randomised conditions on a fixed course".
+
+    `seed` has no default on purpose: forgetting it would silently freeze the suite, which is the
+    failure this change exists to remove. `n` is deliberately NOT an input to the draw — instance
+    `i` gets the same conditions whatever the suite size, so raising `num_instances` extends the
+    suite instead of reshuffling it.
     """
-    return (i + 0.5) / n, i
+    rng = np.random.default_rng([seed, i, 0x5EED])
+    return InstanceParams(
+        # Derived from the round seed too, so reset noise no longer fingerprints the instance.
+        seed=int(rng.integers(1 << 31)),
+        friction_level=float(rng.uniform(0.0, 1.0)),
+        wind_speed=float(rng.uniform(0.0, wind_max)),
+        wind_dir=float(rng.uniform(0.0, 2.0 * np.pi)),
+    )
 
 
 _MODEL: mujoco.MjModel | None = None
@@ -141,29 +179,34 @@ def _shared_model() -> tuple[mujoco.MjModel, list[int]]:
     meshes that MuJoCo converts to convex hulls. Doing that per instance was ~26 s of a 67 s
     evaluation and pushed the referee to 1.1 GB against a 1.5 GiB limit.
 
-    Nothing instance-specific is baked into the model any more: friction is the only thing that
-    varies, and `geom_friction` is a runtime field, so it is written per instance in __init__.
-    Instances run strictly sequentially and each gets a fresh MjData, so sharing the model is
-    safe. Verified bit-identical to per-instance compilation.
+    Nothing instance-specific is baked into the model any more: friction and wind are what vary,
+    and `geom_friction` / `opt.wind` are runtime fields, so both are written per instance in
+    __init__. Instances run strictly sequentially and each gets a fresh MjData, so sharing the
+    model is safe. Verified bit-identical to per-instance compilation.
     """
     global _MODEL
     if _MODEL is None:
         _MODEL = mujoco.MjModel.from_xml_string(_scene_xml(None), _mesh_assets())
         _MODEL.opt.timestep = PHYS_DT
+        # Constant, so it belongs here rather than per instance. Enables the fluid model that
+        # opt.wind acts through; it also adds still-air drag, which is why the baseline moved.
+        _MODEL.opt.density = AIR_DENSITY
         n = sum(len(s.boxes) for s in SEGMENTS)
         _COURSE_GEOMS.extend(_MODEL.geom(f"{GEOM_PREFIX}{i}").id for i in range(n))
     return _MODEL, _COURSE_GEOMS
 
 
 class ParkourSim:
-    def __init__(self, level: float = 0.5, seed: int = 0):
-        rng = np.random.default_rng([seed, 0xC0FFEE])
-        self.frictions = sample_frictions(SEGMENTS, level, rng)
-        self.level = float(level)
+    def __init__(self, params: InstanceParams):
+        self.params = params
+        rng = np.random.default_rng([params.seed, 0xC0FFEE])
+        self.frictions = sample_frictions(SEGMENTS, self.params.friction_level, rng)
+        self.level = self.params.friction_level
         self.model, geoms = _shared_model()
         # Sliding friction only; the model's rolling/torsional values stay as authored.
         for gid, mu in zip(geoms, self.frictions):
             self.model.geom_friction[gid, 0] = mu
+        self.model.opt.wind[:] = self.params.wind
         self.data = mujoco.MjData(self.model)
         self._pelvis = self.model.body("pelvis").id
         # Scan rays must hit the course, not the robot. mj_ray filters by RENDER GROUP, so the
@@ -174,11 +217,11 @@ class ParkourSim:
         self.steps = 0
         self.max_x = START_X
         self._action = np.zeros(ACT_DIM)
-        self._seed = seed
+        self._seed = params.seed
 
-    def reset(self, seed: int) -> np.ndarray:
+    def reset(self) -> np.ndarray:
         mujoco.mj_resetData(self.model, self.data)
-        rng = np.random.default_rng([seed, 0xBADA55])
+        rng = np.random.default_rng([self._seed, 0xBADA55])
         self.data.qpos[0] = START_X
         self.data.qpos[2] = PLINTH_TOP + 0.793
         self.data.qpos[7:] = DEFAULT_ANGLES

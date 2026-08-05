@@ -2,10 +2,10 @@
 
 The geometry is STATIC and public — every instance in every round runs this exact course.
 Randomising the layout was considered and dropped: layout noise adds far more score variance
-than it removes memorisation risk, and round-to-round variance is what sets the takeover margin
-(docs/design.md, "Fixed evaluation suite"). What DOES vary per instance is the sliding friction
-of every surface, and it is deliberately NOT observable — a policy has to feel the slip and
-adapt rather than read a number.
+than it removes memorisation risk (docs/design.md, "Randomised conditions on a fixed course").
+What DOES vary per instance is the sliding friction of every surface, drawn at random from the
+round seed, and it is deliberately NOT observable — a policy has to feel the slip and adapt
+rather than read a number.
 
 Built as MJCF box geoms on a raised plinth, sized for the Unitree G1 (1.26 m tall, pelvis at
 0.784 m). Gaps are real voids in the plinth, so a missed leap is a fall, not a stumble.
@@ -45,9 +45,11 @@ ON_RAMP_RISE, ON_RAMP_RUN, ON_RAMP_DROP = 0.55, 2.0, 0.55
 # much lower, and a segment no embodiment can clear is just a wall.
 DUCK_BAR_Z = 1.05
 
-# Per-instance sliding friction. Normal surfaces vary enough to punish a policy that has
-# memorised one contact model; the slick patch is a different regime entirely.
-FRICTION_NOMINAL = (0.7, 1.1)
+# Per-instance sliding friction, drawn at random (env/sim.instance_spec). Bands are set against
+# measured rubber-on-surface values and the range legged-locomotion sim2real work randomises over:
+# 0.50 is smooth indoor tile, 1.25 is dry concrete. The slick patch is a different regime
+# entirely — wet tile down to near-ice.
+FRICTION_NOMINAL = (0.50, 1.25)
 FRICTION_SLICK = (0.12, 0.30)
 
 COLOR = {  # by maneuver, so a render is readable at a glance
@@ -171,14 +173,19 @@ def course_xml_fragment(segs, frictions=None):
     return "\n".join(out)
 
 
+def nominal_mu(level: float) -> float:
+    """The course-wide sliding friction `level` maps to, before per-geom jitter. For reporting."""
+    lo, hi = FRICTION_NOMINAL
+    return hi - (hi - lo) * float(level)
+
+
 def sample_frictions(segs, level: float, rng: np.random.Generator) -> list[float]:
     """One sliding friction per geom, in `course_xml_fragment` order.
 
     `level` in [0, 1] slides the whole course from the grippy end of its range to the slippery
     end; `rng` adds a little per-geom jitter on top so no two slabs are exactly alike. Slick
-    slabs use their own, much lower range. The split matters: `level` is what the evaluation
-    suite STRATIFIES over (env/sim.py), so a fixed set of instances covers the whole friction
-    continuum evenly instead of sampling it at random.
+    slabs use their own, much lower range. One `level` per instance rather than one per geom:
+    a real run happens on one surface family, not on a patchwork that changes every slab.
     """
     out = []
     for s in segs:

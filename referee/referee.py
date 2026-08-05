@@ -7,13 +7,15 @@ observation vectors.
 raw_score = mean instance score over all instances (see env/scoring.py). Per-instance breakdowns
 go in metadata: hidden while the round is active, revealed to miners when it completes.
 
-Note the round SEED is deliberately unused for instance generation — the course is static and
-public, and a fixed suite is what makes round-to-round variance zero. See env/sim.instance_spec.
+The round seed drives every instance's friction and wind (env/sim.instance_spec), so the suite
+differs every round. The seed itself is NOT reported: rounds may draw it from a predictable
+sequence, and one round's metadata must not hand out the next round's conditions.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import time
 
 from dataclasses import asdict
@@ -22,8 +24,9 @@ from gym_v1 import GameResult, Referee, RefereeContext
 from gym_v1.client import PlayerClient, PlayerError
 from gym_v1.referee import RESULT_PATH
 
-from env import ParkourSim, instance_score, instance_spec
-from env.sim import ACT_DIM, FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM, InvalidAction
+from env import ParkourSim, instance_score, instance_spec, nominal_mu
+from env.sim import (ACT_DIM, FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM, WIND_MAX_MS,
+                     InvalidAction)
 
 # Sized against the referee's 900 s timeout: ~2 s of physics per instance plus HTTP.
 # The round input (CONFIG_JSON) can override.
@@ -53,18 +56,22 @@ class ParkourReferee(Referee):
         n = int(cfg.get("num_instances", DEFAULT_NUM_INSTANCES))
         max_steps = int(cfg.get("max_steps_per_episode", DEFAULT_MAX_STEPS))
         deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
+        wind_max = float(cfg.get("wind_max_ms", WIND_MAX_MS))
+        # The round input is authoritative; ctx.seed (platform SEED) is the fallback. Reading both
+        # means the draw still rotates if the platform's seed extraction misses the input field.
+        seed = int(cfg.get("seed", ctx.seed))
         player = players[0]
 
         instances = []
         total = 0.0
         for i in range(n):
-            level, seed = instance_spec(i, n)
-            sim = ParkourSim(level, seed)
-            obs = sim.reset(seed)
-            # Nothing identifying the instance crosses into the player sandbox. The friction
-            # level is the one thing a policy is supposed to have to FEEL rather than read, so
-            # it must not leak through reset() — hence seed=0 and an empty config. The ONNX
-            # wrapper discards both today, but the leak must not be one player-image edit away.
+            params = instance_spec(i, n, seed, wind_max=wind_max)
+            sim = ParkourSim(params)
+            obs = sim.reset()
+            # Nothing identifying the instance crosses into the player sandbox. Friction and wind
+            # are what a policy is supposed to have to FEEL rather than read, so they must not
+            # leak through reset() — hence seed=0 and an empty config. The ONNX wrapper discards
+            # both today, but the leak must not be one player-image edit away.
             player.reset(match_id=f"{ctx.match_id}:{i}", player_index=0, seed=0, config={})
 
             reason = None
@@ -93,7 +100,10 @@ class ParkourReferee(Referee):
             total += score
             instances.append({
                 "instance": i,
-                "friction_level": round(level, 4),
+                "friction_level": round(params.friction_level, 4),
+                "friction_mu": round(nominal_mu(params.friction_level), 4),
+                "wind_speed_ms": round(params.wind_speed, 2),
+                "wind_dir_deg": round(math.degrees(params.wind_dir), 1),
                 "terminal_reason": reason,
                 "progress": round(sim.progress, 4),
                 "distance_m": round(sim.max_x, 2),
@@ -114,6 +124,7 @@ class ParkourReferee(Referee):
                 "num_instances": len(instances),
                 "num_completed": completed,
                 "furthest_m": max(c["distance_m"] for c in instances),
+                "wind_max_ms": wind_max,
                 "eval_time_in_seconds": round(time.monotonic() - start, 1),
             },
         )

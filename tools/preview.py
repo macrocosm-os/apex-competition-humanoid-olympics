@@ -109,7 +109,7 @@ def render_course(sim: ParkourSim):
     mp4(fd, OUT / "course_flythrough.mp4")
 
 
-def film_run(sim: ParkourSim, artifact: str, seed: int, max_steps: int):
+def film_run(sim: ParkourSim, artifact: str, max_steps: int):
     """Drive the real sim with a real ONNX policy and film it. Scores exactly as the referee does."""
     import onnxruntime as ort
 
@@ -126,7 +126,7 @@ def film_run(sim: ParkourSim, artifact: str, seed: int, max_steps: int):
     cam, opt = _camera()
     fd = frames_dir("_run")
 
-    obs = sim.reset(seed)
+    obs = sim.reset()
     state = np.zeros((1, STATE_DIM), np.float32)
     every = max(1, int(round((1 / 30) / (sim.model.opt.timestep * 10))))
     fi, reason = 0, None
@@ -154,13 +154,16 @@ if __name__ == "__main__":
     ap.add_argument("--run", help="ONNX policy to film driving the course")
     ap.add_argument("--instance", type=int, default=0)
     ap.add_argument("--of", type=int, default=24, help="suite size the instance is drawn from")
+    ap.add_argument("--seed", type=int, default=1, help="round seed: sets friction and wind")
     ap.add_argument("--max-steps", type=int, default=4000)
     ap.add_argument("--no-stills", action="store_true")
     a = ap.parse_args()
     OUT.mkdir(exist_ok=True)
-    level, seed = instance_spec(a.instance, a.of)
-    sim = ParkourSim(level, seed)
+    params = instance_spec(a.instance, a.of, a.seed)
+    print(f"instance {a.instance} of {a.of} at seed {a.seed}: friction level "
+          f"{params.friction_level:.3f}, wind {params.wind_speed:.1f} m/s")
+    sim = ParkourSim(params)
     if not a.no_stills:
         render_course(sim)
     if a.run:
-        film_run(sim, a.run, seed, a.max_steps)
+        film_run(sim, a.run, a.max_steps)
