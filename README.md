@@ -54,7 +54,7 @@ number. That is why the interface carries recurrent state.
 
 ```bash
 python -m env.course          # print the layout
-python tools/preview_v3.py    # stills + flythrough (needs mujoco + ffmpeg)
+python tools/preview.py       # stills + flythrough (needs mujoco + ffmpeg)
 ```
 
 ## Scoring
@@ -102,6 +102,33 @@ the finish), and terrain:
 It does not get an obstacle oracle. There is no "a leap starts in 1.2 m" channel, no segment
 identity, and no friction. Full layout in [`env/sim.py`](env/sim.py).
 
+## Watching an evaluation
+
+A score says how a run ended, not how it got there. `--record` writes a trajectory log — the
+robot's `qpos` at every control step, plus the friction values that built the scene — and
+`tools/replay.py` plays it back:
+
+```bash
+PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 24 --record runs/base.npz
+
+PYTHONPATH=. python tools/replay.py runs/base.npz            # list the instances
+PYTHONPATH=. python tools/replay.py runs/base.npz --worst     # film the run that scored lowest
+PYTHONPATH=. mjpython tools/replay.py runs/base.npz -i 7 --live   # interactive viewer
+```
+
+Replay is **MuJoCo only** — no policy, no onnxruntime, no physics. It sets `data.qpos` and calls
+`mj_forward`, which recomputes everything a renderer needs, so a run stays viewable after the
+submission is gone and cannot drift from what was scored the way re-simulating from an action log
+could. Recording costs one array copy per step and does not touch scoring: a recorded suite
+produces byte-identical numbers to an unrecorded one.
+
+Sizing: ~289 KiB for an instance that runs the full 4000 steps, ~70 KiB for a typical baseline run
+that falls around 20 s. `--record-stride N` keeps every Nth step if that ever matters.
+
+`--live` needs `mjpython` rather than `python` on macOS, because the passive viewer has to own the
+main thread there. Filming to mp4 is headless and needs only ffmpeg. Only `tools/local_eval.py`
+records; the referee's scoring path is untouched.
+
 ## Submitting
 
 The tensor signature is fixed; the graph is not — recurrent nets, ensembles, transformers over a
@@ -127,7 +154,7 @@ env/            course, physics, perception, gates, scoring  (referee image)
 player/         ONNX serving + interface validation           (player image)
 referee/        match driver, fault attribution
 baseline/       the reference policy and where its number came from
-tools/          baseline export, local eval, course preview
+tools/          baseline export, local eval, course preview, trajectory record + replay
 docs/           design notes
 spec.yaml       the competition manifest
 HANDOFF.md      platform-review notes: deviations, measurements, security walk

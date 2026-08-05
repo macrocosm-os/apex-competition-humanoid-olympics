@@ -133,6 +133,41 @@ jobs:
           print('ok: reproducible at', a)
           PY
 
+      # A trajectory log is only worth writing if it still replays later, and the two halves are
+      # in different files — so assert the round trip, not just that recording ran.
+      - name: A recorded run replays from the log alone
+        run: |
+          PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
+            --max-steps 200 -q --json /tmp/norec.json
+          PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
+            --max-steps 200 -q --json /tmp/rec.json --record /tmp/rec.npz
+          python - <<'PY'
+          import json
+          # Recording must not perturb the run it is recording.
+          a, b = (json.load(open(p)) for p in ('/tmp/norec.json', '/tmp/rec.json'))
+          assert a['instances'] == b['instances'], "--record changed the scored result"
+          assert b['recording'] == '/tmp/rec.npz', b.get('recording')
+          print('ok: identical with and without --record, raw_score', a['raw_score'])
+          PY
+          PYTHONPATH=. python tools/replay.py /tmp/rec.npz
+          PYTHONPATH=. python - <<'PY'
+          import mujoco, numpy as np
+          from tools.traj import load
+          from tools.preview import _lit_model
+          rec = load('/tmp/rec.npz')
+          assert len(rec.instances) == 2, rec.meta
+          for inst in rec.instances:
+              # The log has to reproduce the quantity the run was scored on.
+              assert abs(float(inst.qpos[:, 0].max()) - inst.row['max_x']) < 0.01, inst.row
+              # ...and rebuild the scene and pose with nothing but mujoco.
+              model = _lit_model(inst.frictions)
+              data = mujoco.MjData(model)
+              data.qpos[:] = inst.qpos[-1]
+              mujoco.mj_forward(model, data)
+              assert np.isfinite(data.body('pelvis').xpos).all()
+          print('ok: replayed', sum(i.frames for i in rec.instances), 'frames from qpos alone')
+          PY
+
   images:
     needs: [preflight, smoke-test]
     # Only tags produce pushed, signed images. A workflow_dispatch run on a branch would

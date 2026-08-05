@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 renders/
+runs/
 *.mp4
 _preview_course.xml
 baseline_n*_host.json

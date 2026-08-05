@@ -26,14 +26,17 @@ from env.sim import OBS_DIM, PLINTH_TOP, STATE_DIM, START_X, _mesh_assets, _scen
 OUT = pathlib.Path("renders")
 
 
-def _lit_model(sim: ParkourSim) -> mujoco.MjModel:
-    """The sim's own scene, re-compiled with lighting and a framebuffer big enough to render.
+def _lit_model(frictions) -> mujoco.MjModel:
+    """The scored scene, re-compiled with lighting and a framebuffer big enough to render.
 
     The robot XML is authored for headless physics: no lights worth the name, a black backdrop,
     and a 640x480 offscreen buffer. None of that changes the dynamics, so the preview compiles a
     cosmetically patched copy rather than polluting the model the referee runs.
+
+    Takes the friction list rather than a `ParkourSim` so `tools/replay.py` can build the same
+    scene from a recording, with no sim and no policy in reach.
     """
-    xml = _scene_xml(sim.frictions)
+    xml = _scene_xml(frictions)
     # The schema permits exactly one <global>, and the robot already has one, so extend it.
     xml = re.sub(r"<global\b", '<global offwidth="1600" offheight="900"', xml, count=1)
     if "<visual>" not in xml:
@@ -77,7 +80,7 @@ def _camera():
 
 
 def render_course(sim: ParkourSim):
-    m = _lit_model(sim)
+    m = _lit_model(sim.frictions)
     d = mujoco.MjData(m)
     d.qpos[0], d.qpos[2] = START_X, PLINTH_TOP + 0.793
     mujoco.mj_forward(m, d)
@@ -120,7 +123,7 @@ def film_run(sim: ParkourSim, artifact: str, seed: int, max_steps: int):
 
     # Physics runs on the sim's own model; the camera renders a cosmetically lit twin that shares
     # its geometry, so qpos transfers across directly.
-    view = _lit_model(sim)
+    view = _lit_model(sim.frictions)
     vdata = mujoco.MjData(view)
     r = mujoco.Renderer(view, height=720, width=1280)
     cam, opt = _camera()
