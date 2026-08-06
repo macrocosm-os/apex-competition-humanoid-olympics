@@ -5,7 +5,9 @@
 # be unusable (a 24-instance suite did not finish in 15 hours). And a host-side measurement is not
 # a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
 #
-# Run it manually, then copy raw_score into spec.yaml `defaults.baseline_raw_score`.
+# As of 0.4.0 friction and wind are drawn from the round seed, so raw_score is a random variable
+# over seeds. Run this across several seeds and pin the MEAN in spec.yaml
+# `defaults.baseline_raw_score`, recording the spread in HANDOFF.md.
 name: measure-baseline
 
 on:
@@ -17,6 +19,9 @@ on:
       max_steps:
         description: "Control-step cap per instance"
         default: "4000"
+      seed:
+        description: "Round seed: sets every instance's friction and wind"
+        default: "1"
 
 permissions:
   contents: read
@@ -45,8 +50,8 @@ jobs:
             curl -sf http://localhost:8000/health >/dev/null 2>&1 && break || sleep 2
           done
           docker run --rm --network hpnet -v "$PWD/data:/data" \
-            -e MATCH_ID=measure -e SEED=1 -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
-            -e CONFIG_JSON="{\"num_instances\":${{ inputs.num_instances }},\"max_steps_per_episode\":${{ inputs.max_steps }},\"deadline_ms\":500}" \
+            -e MATCH_ID=measure -e SEED=${{ inputs.seed }} -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
+            -e CONFIG_JSON="{\"seed\":${{ inputs.seed }},\"num_instances\":${{ inputs.num_instances }},\"max_steps_per_episode\":${{ inputs.max_steps }},\"deadline_ms\":500}" \
             hp-referee
 
       - name: Report
@@ -55,7 +60,7 @@ jobs:
           import json
           r = json.load(open('data/result.json'))
           m = r['metadata']
-          print('### baseline on native amd64\n')
+          print('### baseline on native amd64, seed ${{ inputs.seed }}\n')
           print('```yaml')
           print(f"baseline_raw_score: {r['raw_scores'][0]:.4f}")
           print('```\n')

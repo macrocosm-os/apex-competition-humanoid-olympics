@@ -12,12 +12,12 @@ the way and falls off the first ledge.
 
 | | |
 |---|---|
-| id / version | `humanoid_parkour` 0.3.0 |
+| id / version | `humanoid_parkour` 0.4.0 |
 | robot | Unitree G1, **12 actuated leg DoF only** — no arm joints, 32.1 kg |
 | submission | ONNX graph, ≤ 25 MB, architecture free |
 | interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
-| evaluation | 24 fixed instances, ≤ 4000 control steps each (80 s sim) |
-| baseline | 0.2007 — see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
+| evaluation | 24 instances, ≤ 4000 control steps each (80 s sim), conditions drawn per round |
+| baseline | see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
 
 ## The robot has no arms
 
@@ -48,13 +48,23 @@ gets 3 m further scores 3 m better, all the way along.
 | balance beam | 0.32 m wide, 3.5 m long |
 | slick patch | low friction, geometry identical to flat |
 
-The geometry is **static and public**. What varies between instances is surface friction, and it
-is deliberately **not observable** — a policy has to feel the slip and adapt rather than read a
-number. That is why the interface carries recurrent state.
+The geometry is **static and public**. What varies between instances is **surface friction and
+wind**, both drawn at random from a per-round seed, and neither is **observable** — a policy has
+to feel the slip or the push and adapt rather than read a number. That is why the interface
+carries recurrent state.
+
+| Condition | Range, per instance |
+|---|---|
+| friction | µ ∈ [0.50, 1.25] course-wide, ±8% per-slab jitter (smooth tile → dry concrete) |
+| slick patch | µ ∈ [0.12, 0.30] (wet tile → near-ice) |
+| wind | 0–8 m/s, any direction in the horizontal plane; steady for the episode |
+
+8 m/s is Beaufort 4 *at the robot*, worth 11.5 N of drag — 3.6% of the G1's weight, pushing
+sideways for the whole run.
 
 ```bash
 python -m env.course          # print the layout
-python tools/preview_v3.py    # stills + flythrough (needs mujoco + ffmpeg)
+python tools/preview.py --seed 1   # stills + flythrough (needs mujoco + ffmpeg)
 ```
 
 ## Scoring
@@ -70,24 +80,26 @@ Per instance, higher is better:
 `raw_score` is the mean over the 24 instances. Any completion outranks any non-completion, faster
 completions outrank slower ones, and partial progress gives non-finishers a training gradient.
 
-## Why the evaluation suite is fixed
+## Why the conditions are randomised
 
-The 24 instances are a pure function of `(index, count)` — **not** of the platform's per-round
-seed (`env/sim.instance_spec`). This is the load-bearing design decision, so it is worth stating
-plainly.
+The course you train against is the course you are scored on — that part is fixed and public on
+purpose. What you **cannot** know in advance is the friction and wind of the 24 instances: they
+are drawn from a per-round seed (`env/sim.instance_spec`) that is not published while the round
+is open.
 
-The course is static and public, so a per-round seed would buy no secrecy. All it would buy is
-score noise, and score noise is what sets the takeover margin. Measured per-instance stdev is
-**0.0176**; against a 1% takeover margin of 0.002, resolving a genuine 1% improvement through a
-randomised suite would need **~1400 instances**, which does not fit the referee's 900 s budget.
+This matters because of what the alternative was. Up to 0.3.3 the suite was a pure function of
+`(index, count)`, which made the entire evaluation — geometry, friction, reset noise, step counts
+— reproducible offline, bit for bit, from this repo. The cheapest way to the top of the
+leaderboard was then not to learn to walk but to optimise 24 open-loop joint trajectories offline
+and replay them. Randomising the conditions is what makes that worthless: a replayed trajectory
+meets a surface and a crosswind it was not optimised for and falls over.
 
-A fixed suite makes a given policy score identically every round. Verified: four different `SEED`
-values all produce the same score, bit for bit. Round-to-round variance is **zero**, so takeover
-is decided by skill.
+The cost is honest and worth knowing if you are chasing the top slot: scores now carry
+round-to-round noise, so a marginal improvement may not resolve in a single round. Conditions are
+reported per instance in post-round metadata, so you can see exactly what you were scored on.
 
-Coverage comes from stratification instead of randomness — friction levels are spread evenly
-across the range, so 24 instances sample the whole grippy-to-slippery continuum rather than
-clustering wherever a draw landed.
+**Practically:** train across the full ranges above, not at their midpoints. A policy tuned for
+µ = 0.9 in still air will meet µ = 0.55 with a 7 m/s crosswind.
 
 ## Perception
 
@@ -100,7 +112,7 @@ the finish), and terrain:
 - **overhead clearance** — 7 upward samples ahead, which is how the duck-under is visible
 
 It does not get an obstacle oracle. There is no "a leap starts in 1.2 m" channel, no segment
-identity, and no friction. Full layout in [`env/sim.py`](env/sim.py).
+identity, no friction and no wind. Full layout in [`env/sim.py`](env/sim.py).
 
 ## Submitting
 
@@ -146,7 +158,7 @@ docker run -d --name hp-p --network hpnet \
 mkdir -p /tmp/hpdata && chmod 777 /tmp/hpdata
 docker run --rm --network hpnet -v /tmp/hpdata:/data \
   -e MATCH_ID=local -e SEED=1 -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
-  -e CONFIG_JSON='{"num_instances":24,"max_steps_per_episode":4000,"deadline_ms":500}' \
+  -e CONFIG_JSON='{"seed":1,"num_instances":24,"max_steps_per_episode":4000,"deadline_ms":500}' \
   hp-referee
 jq '.raw_scores, .metadata.num_completed' /tmp/hpdata/result.json
 ```
