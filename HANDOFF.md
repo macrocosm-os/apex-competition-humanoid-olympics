@@ -114,6 +114,14 @@ Walked against `reference/security-checklist.md`:
   them to know what they were scored on. **The round seed is deliberately NOT reported**: rounds may
   draw seeds from a predictable sequence, so publishing one round's seed could hand out the next
   round's conditions. Nothing else about scoring internals is revealed.
+
+  The per-instance history files (§5) reveal the same conditions plus the **per-geom** friction
+  array and the miner's own trajectory and actions. The seed is excluded from them for the reason
+  above. Note this does not open a new class of leak: the reported `friction_level`, `wind_speed`
+  and `wind_dir` already let a candidate round seed be confirmed by re-deriving the suite and
+  comparing, so the seed's secrecy rests on it being unguessable, not on withholding conditions.
+  That is a property of the 0.4.0 metadata, not of history — but it is worth checking that round
+  seeds are drawn unpredictably, not sequentially, before this ships.
 - **§2 cross-miner** — solo competition. Referee builds fresh `MjData` per instance and holds no
   state keyed on anything a submission controls. The player zeroes policy state on every `/reset`,
   so memory cannot carry across instances (which would otherwise let a policy count episodes and
@@ -123,7 +131,11 @@ Walked against `reference/security-checklist.md`:
   friction, no wind, no segment identity, and no obstacle oracle.
 - **§4 internet** — `allow_internet: false`. `network_disabled: false` only so the referee can
   reach the player on the per-job network.
-- **§5 persistence** — nothing written outside `/data`; no caches, no warm-up state.
+- **§5 persistence** — nothing written outside `/data`; no caches, no warm-up state. The referee
+  writes `/data/result.json` and, per instance, `/data/history/instance_NN.json` (the platform's
+  `FileType.HISTORY` channel, same one tron uses for `trace.jsonl`). History is best-effort: a
+  write failure is logged and the round still scores. ~2 MB per round typically, ~8.5 MB if a
+  policy survives every instance to the step cap; `record_history: false` disables it.
 - **§6/§7 screening** — `artifact_type: onnx`, Layer-1 structural validation only. No Layer-2
   image, which is the outcome the skill steers toward: an ONNX graph cannot carry arbitrary code,
   and interface violations are a typed rejection in the player's loader.

@@ -114,6 +114,59 @@ the finish), and terrain:
 It does not get an obstacle oracle. There is no "a leap starts in 1.2 m" channel, no segment
 identity, no friction and no wind. Full layout in [`env/sim.py`](env/sim.py).
 
+## Watching an evaluation
+
+A score says how a run ended, not how it got there. Every evaluation therefore emits two
+artifacts alongside `result.json`, both collected by the platform and listed on the submission:
+
+| artifact | what it is | where it comes from |
+|---|---|---|
+| **history** — 24 × `instance_NN.json` | the robot's pose and the policy's action at every recorded step, plus the friction and wind the instance was drawn with | the referee writes `/data/history/`; collected as `FileType.HISTORY` |
+| **log** — one line per API call | every `/health`, `/reset` and `/act` the referee made, with latency and status | the player sandbox's stdout; collected as `FileType.LOG` |
+
+This is the same channel [tron](https://github.com/macrocosm-os/apex-competition-tron) uses for
+`/data/trace.jsonl`. A directory is used instead of one JSONL because parkour runs all 24
+instances in **one** referee container, so the per-game unit is a file rather than a line.
+
+Miners download both after the round (`eval_file_paths` on the submission), and
+`tools/replay.py` plays a history file back:
+
+```bash
+PYTHONPATH=. python tools/replay.py downloaded/            # list the instances
+PYTHONPATH=. python tools/replay.py downloaded/ --worst    # film the run that scored lowest
+PYTHONPATH=. mjpython tools/replay.py downloaded/ -i 7 --live   # interactive viewer
+```
+
+Locally, `--record DIR` writes the identical format, so the same tool reads both:
+
+```bash
+PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 24 --record runs/base
+```
+
+Replay is **MuJoCo only** — no policy, no onnxruntime, no physics. It sets `data.qpos` and calls
+`mj_forward`, which recomputes everything a renderer needs, so a run stays viewable after the
+submission and the round seed are gone, and cannot drift from what was scored the way
+re-simulating from the action log could. The actions are stored as diagnostics, not for replay.
+
+Recording costs one array copy per step and does not touch scoring — a recorded suite produces
+byte-identical numbers to an unrecorded one, and a history write that fails is logged and ignored
+rather than failing the round. Set `record_history: false` in the round config to turn it off.
+
+Sizing, at the default stride 2 (25 Hz, which is what the mp4 renders at anyway, so the video is
+identical to recording at 50 Hz):
+
+| | per instance | per 24-instance round |
+|---|---|---|
+| history, run to the 4000-step cap | ~345 KiB | ~8.5 MB |
+| history, typical baseline run (falls ~20 s) | ~86 KiB | ~2.1 MB |
+| API log | — | ~2.7 MB typical, ~10.8 MB worst case |
+
+`--record-stride N` (or `history_stride` in the round config) trades resolution for size; 1 keeps
+all 50 Hz for slow-motion. `APEX_API_LOG=0` disables the API log.
+
+`--live` needs `mjpython` rather than `python` on macOS, because the passive viewer has to own the
+main thread there. Filming to mp4 is headless and needs only ffmpeg.
+
 ## Submitting
 
 The tensor signature is fixed; the graph is not — recurrent nets, ensembles, transformers over a
@@ -134,12 +187,12 @@ near the true ceiling rather than a floor better solutions will grow into.
 ## Repo layout
 
 ```
-env/            course, physics, perception, gates, scoring  (referee image)
+env/            course, physics, perception, gates, scoring, history format (referee image)
   assets/       vendored Unitree G1 12-DoF model + collision meshes (BSD-3)
 player/         ONNX serving + interface validation           (player image)
 referee/        match driver, fault attribution
 baseline/       the reference policy and where its number came from
-tools/          baseline export, local eval, course preview
+tools/          baseline export, local eval, course preview, history replay
 docs/           design notes
 spec.yaml       the competition manifest
 HANDOFF.md      platform-review notes: deviations, measurements, security walk

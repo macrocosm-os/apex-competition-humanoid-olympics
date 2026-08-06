@@ -133,6 +133,34 @@ jobs:
           print('ok: reproducible at', a)
           PY
 
+      # History is only worth writing if it still replays later, and the writer (env/history.py,
+      # also used by the referee) and reader (tools/replay.py) are different files — so assert
+      # the round trip, not just that recording ran.
+      - name: A recorded run replays from its history files alone
+        run: |
+          PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
+            --max-steps 200 -q --json /tmp/norec.json
+          PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
+            --max-steps 200 -q --json /tmp/rec.json --record /tmp/history
+          python - <<'PY'
+          import json
+          # Recording must not perturb the run it is recording.
+          a, b = (json.load(open(p)) for p in ('/tmp/norec.json', '/tmp/rec.json'))
+          assert a['instances'] == b['instances'], "--record changed the scored result"
+          assert b['history_files'] == 2, b.get('history_files')
+          print('ok: identical with and without --record, raw_score', a['raw_score'])
+          PY
+          PYTHONPATH=. python tools/replay.py /tmp/history
+          PYTHONPATH=. python .github/scripts/check_replay_roundtrip.py /tmp/history 2
+
+      # Both miner-facing artifacts, plus the guarantee that failing to write one cannot turn a
+      # scored round into a zero. No containers: the script drives the real referee against the
+      # real player.
+      - name: The referee writes history and the player logs every API call
+        run: |
+          PYTHONPATH=.:referee:player SUBMISSION_PATH=baseline/baseline.onnx \
+            python .github/scripts/check_referee_artifacts.py
+
   images:
     needs: [preflight, smoke-test]
     # Only tags produce pushed, signed images. A workflow_dispatch run on a branch would
