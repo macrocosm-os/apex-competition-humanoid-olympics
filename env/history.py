@@ -1,32 +1,14 @@
-"""Per-instance evaluation history: the artifact a scored run can be replayed from.
+"""One JSON file per evaluation instance: conditions, outcome, and the run itself.
 
-One JSON file per evaluation instance — `instance_00.json` ... `instance_23.json` — holding the
-conditions the instance ran under, how it ended, and the robot's motion throughout. The referee
-writes them to `/data/history/`, which the platform collects as `FileType.HISTORY`, uploads to
-S3, and records in `Submission.eval_file_paths` for the miner to download.
+The referee writes these to `/data/history/`, collected by the platform as `FileType.HISTORY`.
+Tron does the same via `/data/trace.jsonl`; a directory is used because parkour runs all 24
+instances in one container, so the per-game unit is a file.
 
-This mirrors the tron competition, which calls `self.trace(...)` once per step into
-`/data/trace.jsonl`. The shape differs because the games do: tron runs ONE game per referee
-container, so one trace file is one game. Parkour runs the whole 24-instance suite in a single
-container, so the per-game unit is a FILE, not a line — hence the `history/` directory, which the
-worker collects alongside `trace.jsonl` under the same `FileType.HISTORY`.
+Per frame: `qpos` for replay, and `action` — what the policy returned — as diagnostics.
+Re-simulating from actions would depend on bit-exact physics and could silently drift; positions
+cannot. Arrays are base64 float32.
 
-What is stored, per recorded frame:
-    qpos    the full pose (nq = 19: 3 position + 4 orientation + 12 leg joints)
-    action  the 12 joint targets the policy returned for that step
-
-`qpos` is what makes the run replayable. Storing actions instead and re-simulating would be
-smaller, but it would depend on reproducing physics bit-for-bit on the replaying machine, and any
-drift silently shows a run that never happened. Positions cannot drift — nothing is integrated.
-Actions ride along as diagnostics (they are what the policy actually DID), not for replay.
-
-NOT stored: `qvel`, and so anything dynamic — contact forces need the full state to recompute.
-This is visual replay, not force analysis.
-
-Arrays are base64 float32 rather than JSON numbers: ~104 bytes per frame against ~200, and it
-keeps the file a single readable JSON object. `env/` (not `tools/`) because the referee image
-copies `env/` and not `tools/`, and one format shared by the referee and the local tools is the
-only way `tools/replay.py` can read a downloaded artifact and a local recording alike.
+Lives in `env/` because the referee image copies it, not `tools/` — one format serves both.
 """
 
 from __future__ import annotations
@@ -132,6 +114,8 @@ class InstanceRecorder:
                 "nq": self._nq,
                 # Control step each frame was captured at; frame 0 is the pre-step pose.
                 "ticks": pack(np.asarray(self._ticks, np.int32)),
+                # Position only. No qvel, so a replay can show the motion but not contact forces,
+                # which need the full state to recompute. Add it here if that changes.
                 "qpos": pack(np.asarray(self._qpos, np.float32)),
                 # Aligned with ticks. Frame 0 and the terminal frame carry zeros — no action
                 # produced them.
