@@ -5,8 +5,11 @@ but this skips HTTP, so it is for calibration and variance measurement, not for 
 figure that goes in spec.yaml. That one has to be measured inside the referee image.
 
     python tools/local_eval.py baseline/baseline.onnx -n 20
-    python tools/local_eval.py baseline/baseline.onnx -n 20 --json out.json
-    python tools/local_eval.py baseline/baseline.onnx -n 20 --record runs/base
+    python tools/local_eval.py baseline/baseline.onnx -n 20 --seed 7 --json out.json
+    python tools/local_eval.py baseline/baseline.onnx -n 20 --seed 7 --record runs/base
+
+Conditions are drawn from --seed, so raw_score moves between seeds. Sweep it to measure
+round-to-round variance.
 
 `--record DIR` writes the same per-instance history files the referee writes to /data/history/ —
 one `instance_NN.json` each, replayable with tools/replay.py (format in env/history.py). It costs
@@ -30,9 +33,8 @@ from env.history import DEFAULT_STRIDE, InstanceRecorder, write_instance
 from env.sim import FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM
 
 
-def rollout(session, sim: ParkourSim, seed: int, max_steps: int,
-            rec: InstanceRecorder | None = None):
-    obs = sim.reset(seed)
+def rollout(session, sim: ParkourSim, max_steps: int, rec: InstanceRecorder | None = None):
+    obs = sim.reset()
     state = np.zeros((1, STATE_DIM), np.float32)
     names = [i.name for i in session.get_inputs()]
     reason = None
@@ -46,7 +48,7 @@ def rollout(session, sim: ParkourSim, seed: int, max_steps: int,
     return reason
 
 
-def evaluate(path: str, n: int, max_steps: int, verbose: bool = True,
+def evaluate(path: str, n: int, max_steps: int, seed: int = 1, verbose: bool = True,
              record: str | None = None, stride: int = DEFAULT_STRIDE):
     opts = ort.SessionOptions()
     opts.intra_op_num_threads = opts.inter_op_num_threads = 1
@@ -54,27 +56,29 @@ def evaluate(path: str, n: int, max_steps: int, verbose: bool = True,
 
     rows, written, t0 = [], [], time.monotonic()
     for i in range(n):
-        level, seed = instance_spec(i, n)
-        sim = ParkourSim(level, seed)
-        obs_rec = InstanceRecorder(i, sim, stride) if record else None
-        reason = rollout(session, sim, seed, max_steps, obs_rec)
+        params = instance_spec(i, n, seed)
+        sim = ParkourSim(params)
+        rec = InstanceRecorder(i, sim, stride) if record else None
+        reason = rollout(session, sim, max_steps, rec)
         score = instance_score(reason, sim.progress, sim.steps, max_steps)
-        rows.append({"instance": i, "friction_level": round(level, 4), "terminal_reason": reason,
+        rows.append({"instance": i, "friction_level": round(params.friction_level, 4),
+                     "wind_speed_ms": round(params.wind_speed, 2), "terminal_reason": reason,
                      "progress": round(sim.progress, 4), "steps": sim.steps,
                      "score": round(score, 4), "max_x": round(sim.max_x, 2),
                      # The referee's key for the same quantity; history files carry both names.
                      "distance_m": round(sim.max_x, 2),
                      "sim_time_s": round(sim.steps * PHYS_DT * FRAME_SKIP, 2)})
-        if obs_rec is not None:
-            written.append(write_instance(record, obs_rec.record(
+        if rec is not None:
+            written.append(write_instance(record, rec.record(
                 sim, rows[-1], match_id=f"local:{pathlib.Path(path).stem}", num_instances=n)))
         if verbose:
-            print(f"  [{i + 1:3d}/{n}] level {level:.3f}  {reason:14s} {sim.max_x:6.2f} m  "
+            print(f"  [{i + 1:3d}/{n}] mu {params.friction_level:.3f} wind "
+                  f"{params.wind_speed:4.1f} m/s  {reason:14s} {sim.max_x:6.2f} m  "
                   f"progress {sim.progress:.3f}  score {score:.3f}")
 
     scores = [r["score"] for r in rows]
     summary = {
-        "artifact": path, "n": n, "max_steps": max_steps,
+        "artifact": path, "n": n, "max_steps": max_steps, "seed": seed,
         "raw_score": round(statistics.fmean(scores), 4),
         "stdev": round(statistics.stdev(scores), 4) if n > 1 else 0.0,
         "sem": round(statistics.stdev(scores) / n ** 0.5, 4) if n > 1 else 0.0,
@@ -99,6 +103,7 @@ if __name__ == "__main__":
     ap.add_argument("artifact")
     ap.add_argument("-n", type=int, default=20)
     ap.add_argument("--max-steps", type=int, default=4000)
+    ap.add_argument("--seed", type=int, default=1, help="round seed: sets friction and wind")
     ap.add_argument("--json")
     ap.add_argument("--record", metavar="DIR",
                     help="write per-instance history files here — see tools/replay.py")
@@ -107,7 +112,7 @@ if __name__ == "__main__":
                          "1 records all 50 Hz")
     ap.add_argument("-q", "--quiet", action="store_true")
     a = ap.parse_args()
-    s = evaluate(a.artifact, a.n, a.max_steps, verbose=not a.quiet,
+    s = evaluate(a.artifact, a.n, a.max_steps, seed=a.seed, verbose=not a.quiet,
                  record=a.record, stride=a.record_stride)
     print(json.dumps({k: v for k, v in s.items() if k != "instances"}, indent=2))
     if a.json:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import pathlib
 from typing import Any
 
@@ -76,6 +77,7 @@ class InstanceRecorder:
         self._action: list[np.ndarray] = []
         self._ticks: list[int] = []
         self._nq = int(sim.model.nq)
+        self._params = sim.params
         self._frictions = np.asarray(sim.frictions, np.float32)
         # Frame 0 is the starting pose, before any action has been taken.
         self._append(sim, None)
@@ -99,7 +101,13 @@ class InstanceRecorder:
             "instance": self.index,
             "num_instances": num_instances,
             "conditions": {
-                "friction_level": row.get("friction_level"),
+                # Read off the instance's own params, not the caller's row, so the referee and
+                # the local tools cannot drift. `params.seed` is deliberately NOT included: the
+                # round seed is unpublished while a round is open, and a per-instance seed
+                # narrows it. The conditions are what the miner is owed, not what produced them.
+                "friction_level": round(self._params.friction_level, 4),
+                "wind_speed_ms": round(self._params.wind_speed, 2),
+                "wind_dir_deg": round(math.degrees(self._params.wind_dir), 1),
                 # The per-geom sliding friction, in course emission order. Stored rather than
                 # recomputed so a replay rebuilds the scored scene even if sampling changes.
                 "frictions": pack(self._frictions),

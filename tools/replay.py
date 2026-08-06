@@ -61,9 +61,11 @@ class Run:
         return float(self.outcome.get("score") or 0.0)
 
     def describe(self) -> str:
-        o = self.outcome
-        return (f"instance {self.index:3d}  level {self.record['conditions']['friction_level']:.3f}"
-                f"  {str(o.get('terminal_reason')):14s} {float(o.get('distance_m') or 0):6.2f} m "
+        o, c = self.outcome, self.record["conditions"]
+        return (f"instance {self.index:3d}  mu {c['friction_level']:.3f} "
+                f"wind {float(c.get('wind_speed_ms') or 0):4.1f} m/s @ "
+                f"{float(c.get('wind_dir_deg') or 0):5.1f}deg  "
+                f"{str(o.get('terminal_reason')):14s} {float(o.get('distance_m') or 0):6.2f} m "
                 f"of {COURSE_LENGTH:.1f} m  score {self.score:.4f}  {self.frames} frames "
                 f"({max(self.frames - 1, 0) * self.frame_dt:.1f} s)")
 

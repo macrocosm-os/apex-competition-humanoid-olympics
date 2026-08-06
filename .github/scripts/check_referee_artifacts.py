@@ -42,8 +42,8 @@ def play(history_dir: str, instances: int = N, steps: int = STEPS):
     """One scored suite against `history_dir`, returning (result, captured stdout)."""
     ref.HISTORY_DIR = pathlib.Path(history_dir)
     ctx = RefereeContext(match_id="ci", seed=1, num_players=1, player_urls=["http://stub"],
-                         config={"num_instances": instances, "max_steps_per_episode": steps,
-                                 "deadline_ms": 500})
+                         config={"seed": 1, "num_instances": instances,
+                                 "max_steps_per_episode": steps, "deadline_ms": 500})
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         result = ref.ParkourReferee().play_game(ctx, [Stub()])
