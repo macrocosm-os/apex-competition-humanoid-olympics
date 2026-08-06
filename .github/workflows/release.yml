@@ -133,39 +133,116 @@ jobs:
           print('ok: reproducible at', a)
           PY
 
-      # A trajectory log is only worth writing if it still replays later, and the two halves are
-      # in different files — so assert the round trip, not just that recording ran.
-      - name: A recorded run replays from the log alone
+      # History is only worth writing if it still replays later, and the writer (env/history.py,
+      # also used by the referee) and reader (tools/replay.py) are different files — so assert
+      # the round trip, not just that recording ran.
+      - name: A recorded run replays from its history files alone
         run: |
           PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
             --max-steps 200 -q --json /tmp/norec.json
           PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 2 \
-            --max-steps 200 -q --json /tmp/rec.json --record /tmp/rec.npz
+            --max-steps 200 -q --json /tmp/rec.json --record /tmp/history
           python - <<'PY'
           import json
           # Recording must not perturb the run it is recording.
           a, b = (json.load(open(p)) for p in ('/tmp/norec.json', '/tmp/rec.json'))
           assert a['instances'] == b['instances'], "--record changed the scored result"
-          assert b['recording'] == '/tmp/rec.npz', b.get('recording')
+          assert b['history_files'] == 2, b.get('history_files')
           print('ok: identical with and without --record, raw_score', a['raw_score'])
           PY
-          PYTHONPATH=. python tools/replay.py /tmp/rec.npz
+          # One file per instance, named as the platform's FileType.HISTORY collector expects.
+          test -f /tmp/history/instance_00.json && test -f /tmp/history/instance_01.json
+          PYTHONPATH=. python tools/replay.py /tmp/history
           PYTHONPATH=. python - <<'PY'
           import mujoco, numpy as np
-          from tools.traj import load
+          from env.history import read_all
           from tools.preview import _lit_model
-          rec = load('/tmp/rec.npz')
-          assert len(rec.instances) == 2, rec.meta
-          for inst in rec.instances:
-              # The log has to reproduce the quantity the run was scored on.
-              assert abs(float(inst.qpos[:, 0].max()) - inst.row['max_x']) < 0.01, inst.row
+          from tools.replay import Run
+          runs = [Run(r) for r in read_all('/tmp/history')]
+          assert len(runs) == 2, len(runs)
+          for run in runs:
+              # The history has to reproduce the quantity the run was scored on.
+              assert abs(float(run.qpos[:, 0].max()) - run.outcome['distance_m']) < 0.01, run.outcome
+              assert run.action.shape == (run.frames, 12), run.action.shape
               # ...and rebuild the scene and pose with nothing but mujoco.
-              model = _lit_model(inst.frictions)
+              model = _lit_model(run.frictions)
               data = mujoco.MjData(model)
-              data.qpos[:] = inst.qpos[-1]
+              data.qpos[:] = run.qpos[-1]
               mujoco.mj_forward(model, data)
               assert np.isfinite(data.body('pelvis').xpos).all()
-          print('ok: replayed', sum(i.frames for i in rec.instances), 'frames from qpos alone')
+          print('ok: replayed', sum(r.frames for r in runs), 'frames from qpos alone')
+          PY
+
+      # The referee writes the history the miner actually receives, and logs every API call.
+      # Both are exercised here without containers: the stub client calls the real player.
+      - name: The referee writes per-instance history and the player logs every API call
+        run: |
+          PYTHONPATH=.:referee:player SUBMISSION_PATH=baseline/baseline.onnx python - <<'PY'
+          import contextlib, io, pathlib
+          import referee as ref
+          from gym_v1.referee import RefereeContext
+          from launch import ParkourPlayer
+          from env.history import read_all
+
+          N, STEPS = 3, 150
+          ref.HISTORY_DIR = pathlib.Path('/tmp/refhistory')
+          player = ParkourPlayer()
+          assert player.is_ready(), player.load_error
+
+          class Stub:
+              def reset(self, **kw): player.reset(**kw)
+              def act(self, observation, deadline_ms):
+                  return player.act(observation=observation, deadline_ms=deadline_ms)
+
+          ctx = RefereeContext(match_id='ci', seed=1, num_players=1, player_urls=['http://s'],
+                               config={'num_instances': N, 'max_steps_per_episode': STEPS,
+                                       'deadline_ms': 500})
+          buf = io.StringIO()
+          with contextlib.redirect_stdout(buf):
+              result = ref.ParkourReferee().play_game(ctx, [Stub()])
+          log = buf.getvalue()
+
+          files = sorted(pathlib.Path('/tmp/refhistory').glob('*.json'))
+          assert [p.name for p in files] == [f'instance_{i:02d}.json' for i in range(N)], files
+          assert result.metadata['history_files'] == N, result.metadata
+          for rec, row in zip(read_all('/tmp/refhistory'), result.metadata['instances']):
+              assert rec['match_id'] == 'ci'
+              assert rec['outcome']['score'] == row['score'], (rec['outcome'], row)
+
+          acts = [l for l in log.splitlines() if l.startswith('apex.api') and ' call=act ' in l]
+          resets = [l for l in log.splitlines() if ' call=reset ' in l]
+          assert len(resets) == N, len(resets)
+          assert len(acts) == sum(r['steps'] for r in result.metadata['instances']), len(acts)
+          print(f'ok: {N} history files, {len(resets)} reset + {len(acts)} act lines logged')
+          PY
+
+      # A failure to write a debugging artifact must never turn a scored round into a zero.
+      - name: An unwritable history directory does not fail the round
+        run: |
+          PYTHONPATH=.:referee:player SUBMISSION_PATH=baseline/baseline.onnx python - <<'PY'
+          import contextlib, io, pathlib
+          import referee as ref
+          from gym_v1.referee import RefereeContext
+          from launch import ParkourPlayer
+          player = ParkourPlayer()
+
+          class Stub:
+              def reset(self, **kw): player.reset(**kw)
+              def act(self, observation, deadline_ms):
+                  return player.act(observation=observation, deadline_ms=deadline_ms)
+
+          ctx = RefereeContext(match_id='ci', seed=1, num_players=1, player_urls=['http://s'],
+                               config={'num_instances': 2, 'max_steps_per_episode': 100,
+                                       'deadline_ms': 500})
+          with contextlib.redirect_stdout(io.StringIO()):
+              ref.HISTORY_DIR = pathlib.Path('/tmp/writable_history')
+              ok = ref.ParkourReferee().play_game(ctx, [Stub()])
+              ref.HISTORY_DIR = pathlib.Path('/proc/nope/history')
+              bad = ref.ParkourReferee().play_game(ctx, [Stub()])
+          assert ok.metadata['history_files'] == 2, ok.metadata     # the control really wrote
+          assert bad.metadata['history_files'] == 0, bad.metadata
+          assert bad.raw_scores == ok.raw_scores, (bad.raw_scores, ok.raw_scores)
+          print('ok: unwritable history -> history_files=0, score unchanged at', ok.raw_scores[0])
           PY
 
   images:

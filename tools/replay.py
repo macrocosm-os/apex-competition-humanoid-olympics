@@ -1,14 +1,18 @@
 """Play back a recorded evaluation. MuJoCo only — no policy, no onnxruntime, no physics.
 
-    PYTHONPATH=. python tools/replay.py runs/base.npz              # list what is in the log
-    PYTHONPATH=. python tools/replay.py runs/base.npz -i 7         # film instance 7 to mp4
-    PYTHONPATH=. python tools/replay.py runs/base.npz --worst      # film the lowest-scoring one
-    PYTHONPATH=. python tools/replay.py runs/base.npz --all        # film every instance
-    PYTHONPATH=. mjpython tools/replay.py runs/base.npz -i 7 --live   # interactive viewer
+    PYTHONPATH=. python tools/replay.py runs/base              # list what is in the history
+    PYTHONPATH=. python tools/replay.py runs/base -i 7         # film instance 7 to mp4
+    PYTHONPATH=. python tools/replay.py runs/base --worst      # film the lowest-scoring one
+    PYTHONPATH=. python tools/replay.py runs/base --all        # film every instance
+    PYTHONPATH=. mjpython tools/replay.py runs/base -i 7 --live   # interactive viewer
 
-Replay sets `data.qpos` from the log and calls `mj_forward`, which recomputes every derived
+Takes a directory of `instance_NN.json` files or a single one, so it reads a local recording
+(`local_eval.py --record DIR`) and a history artifact downloaded from a scored round identically —
+same format either way (env/history.py).
+
+Replay sets `data.qpos` from the file and calls `mj_forward`, which recomputes every derived
 quantity a renderer needs. Nothing is integrated, so a replay cannot drift from the scored run the
-way re-simulating from an action log could — and it needs neither the submission nor the round
+way re-simulating from the action log could — and it needs neither the submission nor the round
 seed, so a run stays viewable after both are gone.
 
 The scene is rebuilt from the frictions stored per instance, through the same `_lit_model` the
@@ -27,10 +31,41 @@ import time
 import mujoco
 
 from env.course import COURSE_LENGTH
+from env.history import read_all, unpack
 from tools.preview import OUT, _camera, _lit_model, frames_dir, mp4, png
-from tools.traj import Instance, Recording, load
 
 TARGET_FPS = 30.0
+
+
+class Run:
+    """One instance's history, with the arrays unpacked."""
+
+    def __init__(self, record: dict):
+        self.record = record
+        self.index = int(record["instance"])
+        self.outcome = record.get("outcome", {})
+        frames = record["frames"]
+        self.qpos = unpack(frames["qpos"])
+        self.ticks = unpack(frames["ticks"])
+        self.action = unpack(frames["action"])
+        self.frictions = unpack(record["conditions"]["frictions"])
+        timing = record.get("timing", {})
+        self.frame_dt = float(timing.get("control_dt", 0.02)) * int(timing.get("stride", 1))
+
+    @property
+    def frames(self) -> int:
+        return int(self.qpos.shape[0])
+
+    @property
+    def score(self) -> float:
+        return float(self.outcome.get("score") or 0.0)
+
+    def describe(self) -> str:
+        o = self.outcome
+        return (f"instance {self.index:3d}  level {self.record['conditions']['friction_level']:.3f}"
+                f"  {str(o.get('terminal_reason')):14s} {float(o.get('distance_m') or 0):6.2f} m "
+                f"of {COURSE_LENGTH:.1f} m  score {self.score:.4f}  {self.frames} frames "
+                f"({max(self.frames - 1, 0) * self.frame_dt:.1f} s)")
 
 
 def _chase(cam, qpos) -> None:
@@ -45,61 +80,53 @@ def _stride_for(frame_dt: float, target_fps: float) -> tuple[int, float]:
     return step, 1.0 / (frame_dt * step)
 
 
-def _describe(rec: Recording, inst: Instance) -> str:
-    r = inst.row
-    return (f"instance {inst.index:3d}  level {r.get('friction_level'):.3f}  "
-            f"{str(r.get('terminal_reason')):14s} {r.get('max_x'):6.2f} m of {COURSE_LENGTH:.1f} m  "
-            f"score {r.get('score'):.4f}  {inst.frames} frames "
-            f"({max(inst.frames - 1, 0) * rec.frame_dt:.1f} s)")
-
-
-def _scene(inst: Instance) -> tuple[mujoco.MjModel, mujoco.MjData]:
-    """Rebuild the instance's scene from its recorded frictions, refusing a mismatched log."""
-    model = _lit_model(inst.frictions)
-    if inst.qpos.shape[1] != model.nq:
-        raise ValueError(f"recording has nq={inst.qpos.shape[1]}, this model has nq={model.nq}; "
-                         "the log predates a model change and cannot be replayed against it")
+def _scene(run: Run) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    """Rebuild the instance's scene from its recorded frictions, refusing a mismatched history."""
+    model = _lit_model(run.frictions)
+    if run.qpos.shape[1] != model.nq:
+        raise ValueError(f"history has nq={run.qpos.shape[1]}, this model has nq={model.nq}; "
+                         "the file predates a model change and cannot be replayed against it")
     return model, mujoco.MjData(model)
 
 
-def film(rec: Recording, inst: Instance, out: pathlib.Path, target_fps: float = TARGET_FPS,
+def film(run: Run, out: pathlib.Path, target_fps: float = TARGET_FPS,
          width: int = 1280, height: int = 720) -> None:
-    model, data = _scene(inst)
+    model, data = _scene(run)
     cam, opt = _camera()
     renderer = mujoco.Renderer(model, height=height, width=width)
-    step, fps = _stride_for(rec.frame_dt, target_fps)
+    step, fps = _stride_for(run.frame_dt, target_fps)
 
-    fd = frames_dir(f"_replay_{inst.index:03d}")
-    keep = list(range(0, inst.frames, step))
+    fd = frames_dir(f"_replay_{run.index:03d}")
+    keep = list(range(0, run.frames, step))
     if not keep:
-        raise ValueError(f"instance {inst.index} has no recorded frames")
-    if keep[-1] != inst.frames - 1:
-        keep.append(inst.frames - 1)   # always end on the terminal pose
+        raise ValueError(f"instance {run.index} has no recorded frames")
+    if keep[-1] != run.frames - 1:
+        keep.append(run.frames - 1)   # always end on the terminal pose
     for fi, src in enumerate(keep):
-        data.qpos[:] = inst.qpos[src]
+        data.qpos[:] = run.qpos[src]
         mujoco.mj_forward(model, data)
         _chase(cam, data.qpos)
         renderer.update_scene(data, camera=cam, scene_option=opt)
         png(renderer.render(), fd / f"f{fi:05d}.png")
-    mp4(fd, out, fps=max(1, round(fps)))   # a heavily strided log can round below 1 fps
+    mp4(fd, out, fps=max(1, round(fps)))   # a heavily strided history can round below 1 fps
 
 
-def live(rec: Recording, inst: Instance, speed: float = 1.0, loop: bool = False) -> None:
+def live(run: Run, speed: float = 1.0, loop: bool = False) -> None:
     import mujoco.viewer
 
-    model, data = _scene(inst)
+    model, data = _scene(run)
     try:
         viewer = mujoco.viewer.launch_passive(model, data)
     except RuntimeError as e:
         raise SystemExit(f"{e}\n\nOn macOS the passive viewer must own the main thread — run this "
                          f"with `mjpython tools/replay.py ...` instead of `python`.") from e
-    dt = rec.frame_dt / max(speed, 1e-6)
+    dt = run.frame_dt / max(speed, 1e-6)
     with viewer as v:
         while True:
             # Pace against a wall-clock deadline rather than sleeping a flat dt, so the time spent
             # in mj_forward and sync does not quietly stretch playback past real time.
             deadline = time.monotonic()
-            for frame in inst.qpos:
+            for frame in run.qpos:
                 if not v.is_running():
                     return
                 data.qpos[:] = frame
@@ -113,10 +140,10 @@ def live(rec: Recording, inst: Instance, speed: float = 1.0, loop: bool = False)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Replay a recorded evaluation with MuJoCo alone.")
-    ap.add_argument("recording", help=".npz written by local_eval.py --record")
+    ap.add_argument("history", help="directory of instance_NN.json files, or one such file")
     ap.add_argument("-i", "--instance", type=int, help="which instance to play back")
     ap.add_argument("--worst", action="store_true", help="pick the lowest-scoring instance")
-    ap.add_argument("--all", action="store_true", help="film every instance in the log")
+    ap.add_argument("--all", action="store_true", help="film every instance in the history")
     ap.add_argument("--live", action="store_true",
                     help="interactive viewer instead of mp4 (needs mjpython on macOS)")
     ap.add_argument("--speed", type=float, default=1.0, help="--live playback rate; 1.0 is real time")
@@ -125,34 +152,38 @@ if __name__ == "__main__":
     ap.add_argument("--out", help="mp4 path (single instance only; default renders/replay_NNN.mp4)")
     a = ap.parse_args()
 
-    rec = load(a.recording)
-    m = rec.meta
-    print(f"{a.recording}: {len(rec.instances)} instances of {m.get('n')}, "
-          f"{m.get('artifact')}, recorded with mujoco {m.get('mujoco_version')} "
-          f"at {1 / rec.frame_dt:.0f} Hz (stride {m.get('stride')})")
+    runs = [Run(r) for r in read_all(a.history)]
+    first = runs[0].record
+    print(f"{a.history}: {len(runs)} instances of {first.get('num_instances')}, "
+          f"match {first.get('match_id')}, mujoco {first.get('mujoco_version')}, "
+          f"{1 / runs[0].frame_dt:.0f} Hz (stride {first.get('timing', {}).get('stride')})")
 
     if a.all:
         OUT.mkdir(exist_ok=True)
-        for inst in rec.instances:
-            print(" ", _describe(rec, inst))
-            film(rec, inst, OUT / f"replay_{inst.index:03d}.mp4", target_fps=a.fps)
+        for run in runs:
+            print(" ", run.describe())
+            film(run, OUT / f"replay_{run.index:03d}.mp4", target_fps=a.fps)
         raise SystemExit(0)
 
     if a.instance is None and not a.worst:
-        for inst in rec.instances:
-            print(" ", _describe(rec, inst))
+        for run in runs:
+            print(" ", run.describe())
         print("\nPass -i N to film one, --worst for the lowest-scoring, or --all for every one.")
         raise SystemExit(0)
 
     if a.worst:
-        chosen = min(rec.instances, key=lambda i: i.row.get("score", 0.0))
+        chosen = min(runs, key=lambda r: r.score)
     else:
-        chosen = rec.instance(a.instance)
-    print(" ", _describe(rec, chosen))
+        matches = [r for r in runs if r.index == a.instance]
+        if not matches:
+            have = ", ".join(str(r.index) for r in runs)
+            raise SystemExit(f"instance {a.instance} is not in this history; it has [{have}]")
+        chosen = matches[0]
+    print(" ", chosen.describe())
 
     if a.live:
-        live(rec, chosen, speed=a.speed, loop=a.loop)
+        live(chosen, speed=a.speed, loop=a.loop)
     else:
         OUT.mkdir(exist_ok=True)
-        film(rec, chosen, pathlib.Path(a.out) if a.out
+        film(chosen, pathlib.Path(a.out) if a.out
              else OUT / f"replay_{chosen.index:03d}.mp4", target_fps=a.fps)

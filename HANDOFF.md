@@ -105,7 +105,11 @@ Walked against `reference/security-checklist.md`:
   friction, no segment identity, and no obstacle oracle.
 - **§4 internet** — `allow_internet: false`. `network_disabled: false` only so the referee can
   reach the player on the per-job network.
-- **§5 persistence** — nothing written outside `/data`; no caches, no warm-up state.
+- **§5 persistence** — nothing written outside `/data`; no caches, no warm-up state. The referee
+  writes `/data/result.json` and, per instance, `/data/history/instance_NN.json` (the platform's
+  `FileType.HISTORY` channel, same one tron uses for `trace.jsonl`). History is best-effort: a
+  write failure is logged and the round still scores. ~2 MB per round typically, ~8.5 MB if a
+  policy survives every instance to the step cap; `record_history: false` disables it.
 - **§6/§7 screening** — `artifact_type: onnx`, Layer-1 structural validation only. No Layer-2
   image, which is the outcome the skill steers toward: an ONNX graph cannot carry arbitrary code,
   and interface violations are a typed rejection in the player's loader.

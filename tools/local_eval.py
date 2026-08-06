@@ -6,17 +6,19 @@ figure that goes in spec.yaml. That one has to be measured inside the referee im
 
     python tools/local_eval.py baseline/baseline.onnx -n 20
     python tools/local_eval.py baseline/baseline.onnx -n 20 --json out.json
-    python tools/local_eval.py baseline/baseline.onnx -n 20 --record runs/base.npz
+    python tools/local_eval.py baseline/baseline.onnx -n 20 --record runs/base
 
-`--record` writes a trajectory log the run can be replayed from (tools/traj.py, tools/replay.py).
-It costs a `qpos` copy per control step and changes nothing about the scoring, so a recorded suite
-scores identically to an unrecorded one.
+`--record DIR` writes the same per-instance history files the referee writes to /data/history/ —
+one `instance_NN.json` each, replayable with tools/replay.py (format in env/history.py). It costs
+an array copy per control step and changes nothing about the scoring, so a recorded suite scores
+identically to an unrecorded one.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import statistics
 import time
 
@@ -24,45 +26,48 @@ import numpy as np
 import onnxruntime as ort
 
 from env import ParkourSim, instance_score, instance_spec
-from env.sim import OBS_DIM, STATE_DIM
-from tools.traj import Recorder
+from env.history import DEFAULT_STRIDE, InstanceRecorder, write_instance
+from env.sim import FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM
 
 
 def rollout(session, sim: ParkourSim, seed: int, max_steps: int,
-            rec: Recorder | None = None, index: int = 0):
+            rec: InstanceRecorder | None = None):
     obs = sim.reset(seed)
-    if rec is not None:
-        rec.begin(index, sim)
     state = np.zeros((1, STATE_DIM), np.float32)
     names = [i.name for i in session.get_inputs()]
     reason = None
     while reason is None:
         action, state = session.run(None, {names[0]: obs.reshape(1, OBS_DIM), names[1]: state})
-        result = sim.step(np.asarray(action).ravel(), max_steps=max_steps)
+        action = np.asarray(action).ravel()
+        result = sim.step(action, max_steps=max_steps)
         obs, reason = result.obs, result.terminal_reason
         if rec is not None:
-            rec.capture(sim)
+            rec.capture(sim, action)
     return reason
 
 
 def evaluate(path: str, n: int, max_steps: int, verbose: bool = True,
-             record: str | None = None, stride: int = 1):
+             record: str | None = None, stride: int = DEFAULT_STRIDE):
     opts = ort.SessionOptions()
     opts.intra_op_num_threads = opts.inter_op_num_threads = 1
     session = ort.InferenceSession(path, sess_options=opts, providers=["CPUExecutionProvider"])
-    rec = Recorder(path, n, max_steps, stride=stride) if record else None
 
-    rows, t0 = [], time.monotonic()
+    rows, written, t0 = [], [], time.monotonic()
     for i in range(n):
         level, seed = instance_spec(i, n)
         sim = ParkourSim(level, seed)
-        reason = rollout(session, sim, seed, max_steps, rec, index=i)
+        obs_rec = InstanceRecorder(i, sim, stride) if record else None
+        reason = rollout(session, sim, seed, max_steps, obs_rec)
         score = instance_score(reason, sim.progress, sim.steps, max_steps)
         rows.append({"instance": i, "friction_level": round(level, 4), "terminal_reason": reason,
                      "progress": round(sim.progress, 4), "steps": sim.steps,
-                     "score": round(score, 4), "max_x": round(sim.max_x, 2)})
-        if rec is not None:
-            rec.end(sim, rows[-1])
+                     "score": round(score, 4), "max_x": round(sim.max_x, 2),
+                     # The referee's key for the same quantity; history files carry both names.
+                     "distance_m": round(sim.max_x, 2),
+                     "sim_time_s": round(sim.steps * PHYS_DT * FRAME_SKIP, 2)})
+        if obs_rec is not None:
+            written.append(write_instance(record, obs_rec.record(
+                sim, rows[-1], match_id=f"local:{pathlib.Path(path).stem}", num_instances=n)))
         if verbose:
             print(f"  [{i + 1:3d}/{n}] level {level:.3f}  {reason:14s} {sim.max_x:6.2f} m  "
                   f"progress {sim.progress:.3f}  score {score:.3f}")
@@ -80,11 +85,12 @@ def evaluate(path: str, n: int, max_steps: int, verbose: bool = True,
         "wall_time_s": round(time.monotonic() - t0, 1),
         "instances": rows,
     }
-    if rec is not None:
-        out = rec.save(record)
-        summary["recording"] = str(out)
+    if written:
+        summary["history_dir"] = str(record)
+        summary["history_files"] = len(written)
         if verbose:
-            print(f"wrote {out} ({rec.frames} frames, {out.stat().st_size / 1e6:.1f} MB)")
+            total = sum(p.stat().st_size for p in written)
+            print(f"wrote {len(written)} history files to {record}/ ({total / 1e6:.1f} MB)")
     return summary
 
 
@@ -94,10 +100,11 @@ if __name__ == "__main__":
     ap.add_argument("-n", type=int, default=20)
     ap.add_argument("--max-steps", type=int, default=4000)
     ap.add_argument("--json")
-    ap.add_argument("--record", metavar="PATH",
-                    help="write a replayable trajectory log (.npz) — see tools/replay.py")
-    ap.add_argument("--record-stride", type=int, default=1, metavar="N",
-                    help="keep every Nth control step; 1 (default) records all 50 Hz")
+    ap.add_argument("--record", metavar="DIR",
+                    help="write per-instance history files here — see tools/replay.py")
+    ap.add_argument("--record-stride", type=int, default=DEFAULT_STRIDE, metavar="N",
+                    help=f"keep every Nth control step (default {DEFAULT_STRIDE} = 25 Hz); "
+                         "1 records all 50 Hz")
     ap.add_argument("-q", "--quiet", action="store_true")
     a = ap.parse_args()
     s = evaluate(a.artifact, a.n, a.max_steps, verbose=not a.quiet,

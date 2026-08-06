@@ -17,12 +17,19 @@ can simply ignore `state_in` and emit zeros. The observation/action layout is in
 
 A submission that violates the contract fails readiness -> a typed failure attributed to the
 submission, same as a screening rejection.
+
+Every API call the referee makes is logged to stdout, one line per call, which the platform
+captures as this sandbox's FileType.LOG artifact. The vendored handler silences its own request
+logging ("competitions can add their own", gym_v1/player.py) and must not be hand-edited, so the
+logging lives here instead — /health, /reset and /act all route through Player methods, so
+covering the three of them covers the protocol. Set APEX_API_LOG=0 to turn it off.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import time
 from typing import Any
 
 import numpy as np
@@ -36,6 +43,23 @@ SUBMISSION_PATH = os.environ.get("SUBMISSION_PATH", "/app/submission.onnx")
 OBS_DIM = 104
 ACT_DIM = 12
 STATE_DIM = 256
+
+API_LOG = os.environ.get("APEX_API_LOG", "1") != "0"
+
+
+def _api(call: str, **fields: Any) -> None:
+    """One line per API call, on stdout, for the sandbox LOG artifact.
+
+    Space-separated key=value so it greps and splits without a parser. The action vector is NOT
+    logged: it is already in the history artifact, per step, and repeating 12 floats here would
+    roughly triple a log that already carries one line per control step.
+    """
+    if not API_LOG:
+        return
+    rest = " ".join(f"{k}={v}" for k, v in fields.items())
+    # flush per line: the pod log stream is what gets captured, and a buffered tail is lost if
+    # the sandbox is torn down abruptly.
+    print(f"apex.api ts={time.time():.6f} call={call} {rest}", flush=True)
 
 
 def _check(tensor, want_last: int, what: str) -> None:
@@ -77,6 +101,9 @@ class ParkourPlayer(Player):
         self._names: list[str] = []
         self._state = np.zeros((1, STATE_DIM), np.float32)
         self.load_error: str | None = None
+        # Labels the API log; the referee's match_id carries the instance index as ":<i>".
+        self._match = "-"
+        self._step = 0
         try:
             self._session = _load_session()
             self._names = [i.name for i in self._session.get_inputs()]
@@ -85,16 +112,23 @@ class ParkourPlayer(Player):
             print(f"submission rejected at load: {self.load_error}", flush=True)
 
     def is_ready(self) -> bool:
-        return self._session is not None
+        ready = self._session is not None
+        _api("health", ready=int(ready))
+        return ready
 
     def reset(self, match_id: str, player_index: int, seed: int, config: dict[str, Any]) -> None:
         # New instance, fresh memory. Carrying state across instances would let a policy count
         # episodes and infer where it sits in the (fixed, stratified) friction sweep.
         self._state = np.zeros((1, STATE_DIM), np.float32)
+        self._match, self._step = match_id, 0
+        _api("reset", match=match_id, player_index=player_index, status="ok")
 
-    def act(self, observation: Any, deadline_ms: int) -> Any:  # noqa: ARG002
+    def act(self, observation: Any, deadline_ms: int) -> Any:
         if self._session is None:
+            _api("act", match=self._match, step=self._step, deadline_ms=deadline_ms,
+                 status="error", error="not_loaded")
             raise RuntimeError(f"submission failed to load: {self.load_error}")
+        t0 = time.monotonic()
         obs = np.asarray(observation, dtype=np.float32).reshape(1, OBS_DIM)
         action, state = self._session.run(
             None, {self._names[0]: obs, self._names[1]: self._state})
@@ -102,7 +136,11 @@ class ParkourPlayer(Player):
         # invalid_action gate only inspects the action, so sanitise it here.
         self._state = np.nan_to_num(np.asarray(state, np.float32).reshape(1, STATE_DIM),
                                     nan=0.0, posinf=0.0, neginf=0.0)
-        return np.asarray(action, dtype=np.float64).ravel().tolist()
+        out = np.asarray(action, dtype=np.float64).ravel().tolist()
+        _api("act", match=self._match, step=self._step, deadline_ms=deadline_ms,
+             latency_ms=f"{1000 * (time.monotonic() - t0):.3f}", status="ok")
+        self._step += 1
+        return out
 
 
 if __name__ == "__main__":

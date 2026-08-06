@@ -7,6 +7,12 @@ observation vectors.
 raw_score = mean instance score over all instances (see env/scoring.py). Per-instance breakdowns
 go in metadata: hidden while the round is active, revealed to miners when it completes.
 
+Alongside the score, each instance writes a replayable history file to /data/history/ — the
+platform collects those as FileType.HISTORY, ships them to S3, and lists them on the submission
+for the miner to download (see env/history.py, tools/replay.py). This is the same artifact
+channel tron uses via /data/trace.jsonl; a directory is used instead of one JSONL because parkour
+runs all 24 instances in ONE referee container, so the per-game unit is a file rather than a line.
+
 Note the round SEED is deliberately unused for instance generation — the course is static and
 public, and a fixed suite is what makes round-to-round variance zero. See env/sim.instance_spec.
 """
@@ -14,6 +20,8 @@ public, and a fixed suite is what makes round-to-round variance zero. See env/si
 from __future__ import annotations
 
 import json
+import pathlib
+import sys
 import time
 
 from dataclasses import asdict
@@ -23,6 +31,7 @@ from gym_v1.client import PlayerClient, PlayerError
 from gym_v1.referee import RESULT_PATH
 
 from env import ParkourSim, instance_score, instance_spec
+from env.history import DEFAULT_STRIDE, InstanceRecorder, write_instance
 from env.sim import ACT_DIM, FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM, InvalidAction
 
 # Sized against the referee's 900 s timeout: ~2 s of physics per instance plus HTTP.
@@ -30,6 +39,11 @@ from env.sim import ACT_DIM, FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM, InvalidAct
 DEFAULT_NUM_INSTANCES = 24
 DEFAULT_MAX_STEPS = 4000
 DEFAULT_DEADLINE_MS = 500
+
+# Sibling of /data/result.json. The worker copies `<mount>/history/*` out of the sandbox before
+# wiping it and delivers them as FileType.HISTORY, so the name of this directory is a contract
+# with the platform, not a local choice.
+HISTORY_DIR = pathlib.Path("/data/history")
 
 # Everything a broken player can throw at us, all of it the SUBMISSION's fault.
 #
@@ -53,14 +67,20 @@ class ParkourReferee(Referee):
         n = int(cfg.get("num_instances", DEFAULT_NUM_INSTANCES))
         max_steps = int(cfg.get("max_steps_per_episode", DEFAULT_MAX_STEPS))
         deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
+        # On by default, as tron's trace is. The escape hatch exists because history is the one
+        # output that grows with the suite, not because the scored path depends on it.
+        record_history = bool(cfg.get("record_history", True))
+        history_stride = int(cfg.get("history_stride", DEFAULT_STRIDE))
         player = players[0]
 
         instances = []
+        history_written = 0
         total = 0.0
         for i in range(n):
             level, seed = instance_spec(i, n)
             sim = ParkourSim(level, seed)
             obs = sim.reset(seed)
+            rec = InstanceRecorder(i, sim, history_stride) if record_history else None
             # Nothing identifying the instance crosses into the player sandbox. The friction
             # level is the one thing a policy is supposed to have to FEEL rather than read, so
             # it must not leak through reset() — hence seed=0 and an empty config. The ONNX
@@ -88,6 +108,8 @@ class ParkourReferee(Referee):
                     reason = "invalid_action"  # NaN / wrong shape / non-numeric
                     break
                 obs, reason = result.obs, result.terminal_reason
+                if rec is not None:
+                    rec.capture(sim, action)
 
             score = instance_score(reason, sim.progress, sim.steps, max_steps)
             total += score
@@ -102,6 +124,19 @@ class ParkourReferee(Referee):
                 "score": round(score, 4),
             })
 
+            # Best-effort, and deliberately so: a history file is a debugging artifact, and
+            # failing to write one must never turn a scored round into a referee failure. The
+            # platform's own collection is best-effort for the same reason.
+            if rec is not None:
+                try:
+                    write_instance(HISTORY_DIR, rec.record(
+                        sim, instances[-1], match_id=ctx.match_id, num_instances=n))
+                    history_written += 1
+                except Exception as e:  # noqa: BLE001 — never fail a round over an artifact
+                    print(f"history write failed for instance {i}: {type(e).__name__}: {e}",
+                          file=sys.stderr, flush=True)
+            rec = None   # drop the buffer; peak memory stays one episode, not the whole suite
+
         completed = sum(c["terminal_reason"] == "completed" for c in instances)
         raw = total / len(instances)
         return GameResult(
@@ -114,6 +149,7 @@ class ParkourReferee(Referee):
                 "num_instances": len(instances),
                 "num_completed": completed,
                 "furthest_m": max(c["distance_m"] for c in instances),
+                "history_files": history_written,
                 "eval_time_in_seconds": round(time.monotonic() - start, 1),
             },
         )
