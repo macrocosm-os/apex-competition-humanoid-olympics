@@ -79,21 +79,39 @@ checklist item this repo cannot close on its own.
 All numbers from the referee image, at `fixtures/input.json`
 (`num_instances: 24`, `max_steps_per_episode: 4000`, `deadline_ms: 500`).
 
-All 0.3.3 figures, i.e. a fixed suite in still air. **The score rows are stale in 0.4.0** —
-randomised friction plus MuJoCo's fluid model both move them, and `baseline_raw_score` is now a
-random variable that must be pinned as a mean over a seed sweep. Re-run
-`.github/workflows/measure-baseline.yml` (it takes a `seed` input) before release. The memory and
-wall-time rows are unaffected in kind: wind adds no allocation and no rays.
+Score rows are v0.4.0, re-measured after randomised conditions landed. Memory rows are 0.3.3 and
+unaffected in kind: wind adds no allocation and no rays, and history buffers one episode at a time.
 
 | | |
 |---|---|
-| `baseline_raw_score` | **0.2007** — STALE (native amd64; exact `0.20068353334086175`) |
-| completions | 0 of 24 — furthest 10.73 m of 51.1 m — STALE |
-| eval wall time | 66 s amd64 (31 s arm64); ~258 s worst case vs 900 s timeout |
-| referee peak memory | **560 MiB of 1536 (36%)**, measured under `--memory 1.5g` |
-| player peak memory | 30 MiB of 1536 (2%) |
-| per-instance stdev | 0.0176 |
-| determinism | bit-identical across seeds, and across two separate amd64 CI runners |
+| `baseline_raw_score` | **0.2150** — mean of 3 seeds, native amd64 (see below) |
+| completions | 0 of 24 — furthest 10.97–11.31 m of 51.1 m |
+| eval wall time | 74–80 s amd64; ~258 s worst case vs 900 s timeout |
+| referee peak memory | **560 MiB of 1536 (36%)**, measured under `--memory 1.5g` (0.3.3) |
+| player peak memory | 30 MiB of 1536 (2%) (0.3.3) |
+| per-instance stdev | 0.0034–0.0164 depending on seed |
+| determinism | bit-identical across two separate amd64 CI runners at a fixed seed |
+
+### σ_round, and why `baseline_raw_score` is provisional
+
+v0.4.0 draws conditions per round, so the baseline is a random variable. Measured in the referee
+image on native amd64 (runs 31145125337 / 31145130114 / 31145134945):
+
+| seed | raw_score |
+|---|---|
+| 1 | 0.21575696094883565 |
+| 2 | 0.21245392681077288 |
+| 3 | 0.21668923138720390 |
+
+mean **0.21497**, σ_round **0.0022**, standard error **0.0013**. A 12-seed host-side sweep agrees
+(σ_round 0.0025; host mean differs from the in-image mean by 0.00003, far inside the noise), so
+σ_round is real and close to the 0.0036 this document originally extrapolated.
+
+**This is not enough for stage or prod.** The standard error is ~62% of the ~0.0021 takeover
+margin, so the bar could be set off by most of a takeover step in either direction. Three seeds
+is sized for PR-environment plumbing only. Re-run across ≥20 seeds (standard error ~0.0006)
+before promoting. The caveat above still stands: the baseline's variance is bimodal — it either
+clears the on-ramp or does not — so a policy that gets deep into the course may vary more.
 
 Architecture sensitivity, all inside the 1% takeover margin — which is why the spec figure is
 pinned to amd64-in-image:
