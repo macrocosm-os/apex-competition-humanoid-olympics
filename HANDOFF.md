@@ -1,4 +1,4 @@
-# Handoff — `humanoid_parkour` v0.4.0
+# Handoff — `humanoid_parkour` v0.5.0
 
 For platform review. Covers the build checklist, the places this competition deliberately
 deviates from the skill's guidance, and what is measured versus assumed.
@@ -36,7 +36,8 @@ seed buys no secrecy and only buys noise. The argument was wrong in a specific w
 suite gives away is not the course but the whole evaluation. Geometry, friction, reset noise and
 step counts were all computable offline from this repo, so the cheapest route to the top was
 offline trajectory optimisation plus replay — 24 open-loop solutions, ~2.3 MB in fp16, inside a
-25 MB cap. That beats a real policy on the metric while embodying none of the success statement.
+25 MB cap (1.7 MB at 0.5.0's 3000-step cap). That beats a real policy on the metric while
+embodying none of the success statement.
 
 0.4.0 draws **friction and wind per instance from the round seed** (`env/sim.instance_spec`).
 Geometry is unchanged: still static, still public. The competition owner's constraint was to keep
@@ -77,7 +78,7 @@ checklist item this repo cannot close on its own.
 ## Measured
 
 All numbers from the referee image, at `fixtures/input.json`
-(`num_instances: 24`, `max_steps_per_episode: 4000`, `deadline_ms: 500`).
+(`num_instances: 24`, `max_steps_per_episode: 3000`, `deadline_ms: 500`).
 
 Score rows are v0.4.0, re-measured after randomised conditions landed. Memory rows are 0.3.3 and
 unaffected in kind: wind adds no allocation and no rays, and history buffers one episode at a time.
@@ -86,7 +87,8 @@ unaffected in kind: wind adds no allocation and no rays, and history buffers one
 |---|---|
 | `baseline_raw_score` | **0.2150** — mean of 3 seeds, native amd64 (see below) |
 | completions | 0 of 24 — furthest 10.97–11.31 m of 51.1 m |
-| eval wall time | 74–80 s amd64; ~258 s worst case vs 900 s timeout |
+| eval wall time | 74–80 s on a CI amd64 runner; **207 s in the PR environment** at cpu_limit 2 |
+| worst case | ~750 s vs the 900 s timeout, at the 15 MB cap and 3000 steps (see below) |
 | referee peak memory | **560 MiB of 1536 (36%)**, measured under `--memory 1.5g` (0.3.3) |
 | player peak memory | 30 MiB of 1536 (2%) (0.3.3) |
 | per-instance stdev | 0.0034–0.0164 depending on seed |
@@ -179,3 +181,32 @@ Walked against `reference/security-checklist.md`:
 5. **Stage validation.**
 6. **Fleet CPU homogeneity** — the open platform question. Same-generation reproducibility is
    demonstrated; cross-generation is not, and it cannot be tested from this repo.
+
+## Evaluation wall clock — the 0.5.0 sizing (measured in the PR environment)
+
+The referee's 900 s timeout is the binding constraint, and it binds on GOOD policies: the stock
+baseline falls at ~10 m so it only runs ~28k control steps, while a policy that survives every
+step runs `24 x max_steps`. Measured per control step, in-sandbox, at `cpu_limit: 2`:
+
+| submission | size | ms/step | node |
+|---|---|---|---|
+| stock baseline | 0.13 MiB | 7.12 | idle |
+| max-size probe | 22.48 MiB | 12.01 | idle |
+| mid-size probe | 14.42 MiB | 12.43 | contended (2x text-clustering) |
+
+Only ~1.2 ms of that is accounted work (0.45 ms physics + 10 `mj_step` + rays, 0.04 ms JSON,
+0.51–2.62 ms inference). The rest is the synchronous `/act` round trip: the vendored
+`gym_v1.PlayerClient` opens a fresh TCP connection per call, so a full-survival run makes 72,000
+connections. Keep-alive in the SDK client is the largest single lever left and would benefit every
+gym_v1 competition.
+
+`cpu_limit: 2` came from this: at 1 CPU the per-step cost was 14.99 ms, at 2 it is 7.71 ms, while
+median policy inference barely moved (0.525 → 0.510 ms). Neither sandbox is CPU-bound — 2 throttled
+CFS periods out of 1690 — so this is a concurrency ceiling, not starvation.
+
+**Caveat on precision.** These are single evaluations in a shared cluster. Node contention moves
+per-step cost by ~2–5 ms, which is more than the difference between a 15 and a 25 MB cap — the
+14.42 MiB run above measured *slower* than the 22.48 MiB one because it landed on a busy node. The
+caps are therefore sized against the **worst observed** cost, and `max_steps` is the more reliable
+lever because it bounds the worst case regardless of submission. Re-measure on a quiet node, or
+across several runs, before tightening further.

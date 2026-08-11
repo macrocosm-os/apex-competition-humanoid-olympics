@@ -158,7 +158,7 @@ if __name__ == "__main__":
     ap.add_argument("--instance", type=int, default=0)
     ap.add_argument("--of", type=int, default=24, help="suite size the instance is drawn from")
     ap.add_argument("--seed", type=int, default=1, help="round seed: sets friction and wind")
-    ap.add_argument("--max-steps", type=int, default=4000)
+    ap.add_argument("--max-steps", type=int, default=3000)
     ap.add_argument("--no-stills", action="store_true")
     a = ap.parse_args()
     OUT.mkdir(exist_ok=True)

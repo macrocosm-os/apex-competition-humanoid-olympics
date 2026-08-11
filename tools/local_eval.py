@@ -102,7 +102,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("artifact")
     ap.add_argument("-n", type=int, default=20)
-    ap.add_argument("--max-steps", type=int, default=4000)
+    ap.add_argument("--max-steps", type=int, default=3000)
     ap.add_argument("--seed", type=int, default=1, help="round seed: sets friction and wind")
     ap.add_argument("--json")
     ap.add_argument("--record", metavar="DIR",
