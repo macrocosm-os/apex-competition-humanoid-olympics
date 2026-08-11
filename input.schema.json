@@ -21,8 +21,9 @@
     "max_steps_per_episode": {
       "type": "integer",
       "minimum": 100,
-      "maximum": 6000,
-      "description": "Control-step cap per instance (1 step = 20 ms sim time, so 4000 = 80 s)."
+      "maximum": 3000,
+      "default": 3000,
+      "description": "Control-step cap per instance (1 step = 20 ms sim time, so 3000 = 60 s). Lowered from 4000 and hard-capped at 3000 in 0.5.0: this value multiplied by num_instances sets the referee's worst-case wall clock, and at the measured 12.4 ms per control step on evaluation hardware, 24 x 3000 = 72,000 steps lands near 900 s. The maximum is deliberately the timeout budget rather than a physics limit, so no round input can be configured past it. 60 s of sim is ample for a 51 m course; a policy that completes terminates early and never reaches the cap."
     },
     "deadline_ms": {
       "type": "integer",

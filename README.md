@@ -12,11 +12,11 @@ the way and falls off the first ledge.
 
 | | |
 |---|---|
-| id / version | `humanoid_parkour` 0.4.0 |
+| id / version | `humanoid_parkour` 0.5.0 |
 | robot | Unitree G1, **12 actuated leg DoF only** — no arm joints, 32.1 kg |
-| submission | ONNX graph, ≤ 25 MB, architecture free |
+| submission | ONNX graph, ≤ 15 MB, architecture free |
 | interface | `obs[104]` + `state_in[256]` → `action[12]` + `state_out[256]`, float32 |
-| evaluation | 24 instances, ≤ 4000 control steps each (80 s sim), conditions drawn per round |
+| evaluation | 24 instances, ≤ 3000 control steps each (60 s sim), conditions drawn per round |
 | baseline | see [`baseline/PROVENANCE.md`](baseline/PROVENANCE.md) |
 
 ## The robot has no arms
@@ -157,7 +157,7 @@ identical to recording at 50 Hz):
 
 | | per instance | per 24-instance round |
 |---|---|---|
-| history, run to the 4000-step cap | ~345 KiB | ~8.5 MB |
+| history, run to the 3000-step cap | ~264 KiB | ~6.3 MB |
 | history, typical baseline run (falls ~20 s) | ~86 KiB | ~2.1 MB |
 | API log | — | ~2.7 MB typical, ~10.8 MB worst case |
 
@@ -170,9 +170,16 @@ main thread there. Filming to mp4 is headless and needs only ffmpeg.
 ## Submitting
 
 The tensor signature is fixed; the graph is not — recurrent nets, ensembles, transformers over a
-history window. The 25 MB cap is ~180x the size of the reference policies it is measured against
-(every Unitree humanoid walker is 0.13-0.14 MB) and is not what will stop you. `state_in`/`state_out` are your own opaque per-episode memory — zeroed on
-reset, fed back each step. A feed-forward policy ignores `state_in` and returns zeros.
+history window. The 15 MB cap is ~110x the size of the reference policies it is measured against
+(every Unitree humanoid walker is 0.13-0.14 MB), so it is unlikely to be what stops you.
+`state_in`/`state_out` are your own opaque per-episode memory — zeroed on reset, fed back each
+step. A feed-forward policy ignores `state_in` and returns zeros.
+
+**The cap is a wall-clock limit, not a taste judgement.** Inference runs once per control step, up
+to 72,000 times per evaluation, and its cost is linear in artifact size — measured on evaluation
+hardware, a 22.5 MiB graph costs 2.62 ms/step against 0.51 ms for the 134 KB reference walker.
+Lowered from 25 MB in 0.5.0 because the referee has a 900 s timeout and a max-size policy that
+survived every step overran it.
 
 Off-the-shelf G1 locomotion policies are a reasonable starting point and that is exactly what the
 baseline is, but none of them can see terrain, so none of them will get past the on-ramp without
@@ -211,7 +218,7 @@ docker run -d --name hp-p --network hpnet \
 mkdir -p /tmp/hpdata && chmod 777 /tmp/hpdata
 docker run --rm --network hpnet -v /tmp/hpdata:/data \
   -e MATCH_ID=local -e SEED=1 -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
-  -e CONFIG_JSON='{"seed":1,"num_instances":24,"max_steps_per_episode":4000,"deadline_ms":500}' \
+  -e CONFIG_JSON='{"seed":1,"num_instances":24,"max_steps_per_episode":3000,"deadline_ms":500}' \
   hp-referee
 jq '.raw_scores, .metadata.num_completed' /tmp/hpdata/result.json
 ```

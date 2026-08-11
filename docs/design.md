@@ -147,37 +147,61 @@ opaque 256-float state vector, zeroed on reset and threaded by the player betwee
 This also fell out of the baseline: the stock walker **is** an LSTM. A feed-forward-only contract
 would have made the reference policy unrepresentable.
 
-## Submission size cap: 25 MB
+## Submission size cap: 15 MB
 
-Set against measurement. Single-threaded ONNX Runtime on one CPU, MLPs over the full
-`obs + state` input:
+**Lowered from 25 MB in 0.5.0, and the reasoning is inverted from what it was.** Every earlier
+draft of this section concluded "compute does not bind". That was wrong, and wrong for an
+instructive reason: it was measured on the wrong machine.
 
-| arch | params | size | ms/step | 96,000 inferences |
+The old table below was produced by a host-side probe and then re-measured on a GitHub amd64
+runner. Neither is the evaluation environment. Measured **inside the player sandbox** on the PR
+environment, a 5.89M-param / 22.5 MiB graph costs **2.62 ms/step** — against the 0.352 ms the
+table claims for the same architecture class, i.e. **7.5x**. Over a full-survival run that is
+~252 s of inference, not 34 s.
+
+Cost is cleanly linear in artifact size. Six models from 0.13 to 22.5 MiB, single-threaded ONNX
+Runtime, residuals ≤ 0.012 ms:
+
+| size | params | ms/step (host) |
+|---|---|---|
+| 0.13 MiB — the reference class | 31k | 0.018 |
+| 4.24 MiB | 1.1M | 0.070 |
+| 7.80 MiB | 2.0M | 0.122 |
+| 14.42 MiB | 3.8M | 0.245 |
+| 22.48 MiB | 5.9M | 0.380 |
+
+so `inference ≈ 0.0166 ms/MiB` on a fast host, and ~0.095 ms/MiB in-sandbox — a 5.7x gap that a
+shared cloud vCPU accounts for.
+
+Size costs **more than its own inference**, which is the part no earlier draft anticipated. Going
+0.13 → 22.5 MiB added 4.89 ms per control step, of which only 2.11 ms was inference. The remaining
+~2.8 ms is systemic, most plausibly cache and memory pressure: the player and referee are
+scheduled on the same node and compete for the same last-level cache.
+
+Against the referee's 900 s timeout, with 24 instances:
+
+| cap | ms/step | 4000 steps | 3000 steps | 2500 steps |
 |---|---|---|---|---|
-| (64, 32) — the reference class | 34k | 0.13 MB | 0.008 | 1 s |
-| (512, 512) | 585k | 2.2 MB | 0.040 | 4 s |
-| (1024, 1024) | 1.7M | 6.5 MB | 0.106 | 10 s |
-| (2048, 2048) | 5.5M | 21 MB | 0.352 | 34 s |
-| (4096, 4096) | 19M | 74 MB | 1.430 | 137 s |
+| 25 MB | 12.6 | 1206 s | 904 s | 754 s |
+| **15 MB** | **10.4** | 996 s | **747 s** | 622 s |
+| 10 MB | 9.3 | 891 s | 668 s | 557 s |
 
-Re-measured on a GitHub amd64 runner (worker-class, and the number that matters): 0.012 / 0.062 /
-0.156 / 0.472 / 2.581 ms per step for the same five architectures — roughly 1.5-1.8x slower. At
-the 25 MB cap that is still ~45 s of inference against a ~640 s budget. `measure-baseline.yml`
-runs this on every dispatch and fails if the cap ever admits a model the CPU cannot run in time.
+**15 MB paired with `max_steps_per_episode: 3000` is the chosen point**: ~750 s worst case, ~17%
+margin. 15 MB is still ~110x the 0.13-0.14 MB of every Unitree reference walker (G1, H1, H1-2) and
+fits a ~3.9M-parameter net, so it does not constrain any architecture this task plausibly wants.
 
-The per-inference budget for a policy that survives every step is ~6.7 ms (900 s referee timeout,
-less ~258 s of physics and HTTP on a worker-class amd64 CPU, over 24 x 4000 calls). So **compute does not bind**, even at
-74 MB — an earlier draft of this spec justified a 100 MB cap on compute grounds and was simply
-wrong.
-
-25 MB is chosen because every Unitree reference locomotion policy — G1, H1, H1-2 — is
-**0.13-0.14 MB**, so 25 MB is ~180x the class of policy this task needs, while still fitting a
-6-layer d=256 transformer over a history window (~5M params). Capacity beyond that buys nothing
-on a proprioception-plus-height-scan control problem.
+Two things worth recording about *how* this was established, because they bound how much to trust
+it. The per-step figures come from single evaluations in a shared environment, and run-to-run node
+contention (~2-5 ms/step) is **larger** than the difference between a 15 and a 25 MB cap — one run
+with a 14.42 MiB model on a contended node measured *slower* per step than a 22.5 MiB model on an
+idle one. So the cap is sized against the **worst observed** per-step cost rather than a fitted
+curve, and `max_steps` is the more reliable lever because it bounds the worst case regardless of
+what a miner submits. Second, a policy that *completes* terminates early, so the cap only ever
+binds the mediocre-but-surviving case — which is exactly the case worth bounding.
 
 The cap used to carry a second justification — a fixed suite means spare parameters invite
 memorising 24 instances — which 0.4.0 retires. Worth recording that it was never quantitatively
-sound: 24 × 4000 steps × 12 actions is **2.3 MB in fp16**, so the payload a memoriser needs fits
+sound: 24 × 3000 steps × 12 actions is **1.7 MB in fp16**, so the payload a memoriser needs fits
 inside any cap this task would plausibly set. Randomising the conditions is what makes memorising
 worthless; the cap never did that work.
 

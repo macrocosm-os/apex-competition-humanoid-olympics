@@ -98,7 +98,7 @@ def probe(instances: int, max_steps: int, physics_s: float, cap_mb: float) -> No
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--instances", type=int, default=24)
-    ap.add_argument("--max-steps", type=int, default=4000)
+    ap.add_argument("--max-steps", type=int, default=3000)
     ap.add_argument("--physics-s", type=float, default=109.0,
                     help="measured physics + HTTP cost of a full-survival run")
     ap.add_argument("--cap-mb", type=float, default=25.0)
