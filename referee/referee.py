@@ -41,7 +41,7 @@ from env.sim import (ACT_DIM, FRAME_SKIP, OBS_DIM, PHYS_DT, STATE_DIM, WIND_MAX_
 # Sized against the referee's 900 s timeout: ~2 s of physics per instance plus HTTP.
 # The round input (CONFIG_JSON) can override.
 DEFAULT_NUM_INSTANCES = 24
-DEFAULT_MAX_STEPS = 4000
+DEFAULT_MAX_STEPS = 3000
 DEFAULT_DEADLINE_MS = 500
 
 # Sibling of /data/result.json. The worker copies `<mount>/history/*` out of the sandbox before
@@ -199,7 +199,7 @@ class ParkourReferee(Referee):
                         "load or does not match the required interface: inputs obs "
                         f"[batch, {OBS_DIM}] and state_in [batch, {STATE_DIM}], outputs action "
                         f"[batch, {ACT_DIM}] and state_out [batch, {STATE_DIM}], all float32, "
-                        "single file with weights embedded, <= 25 MB."
+                        "single file with weights embedded, <= 15 MB."
                     ),
                 },
             )

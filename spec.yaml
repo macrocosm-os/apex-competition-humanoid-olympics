@@ -1,16 +1,25 @@
 schema: apex.competition.v1
 id: humanoid_parkour
-version: 0.4.0
+version: 0.5.0
 display_name: "Humanoid Parkour"
 kind: solo
 process_type: cpu
 
-# Measured under these exact limits: referee peaks at 560 MiB (36% of 1.5Gi), player at 30 MiB.
-# Referee memory does not scale with submission quality — a policy that survives longer runs more
-# steps, and steps do not allocate — so this is close to the true ceiling, not a baseline figure
-# that better solutions will grow into.
+# Memory measured under these exact limits: referee peaks at 560 MiB (36% of 1.5Gi), player at
+# 30 MiB. Referee memory does not scale with submission quality — a policy that survives longer
+# runs more steps, and steps do not allocate — so this is close to the true ceiling, not a
+# baseline figure that better solutions will grow into.
+#
+# cpu_limit is 2, not 1, and that is a wall-clock decision rather than a compute one. The
+# evaluation is a synchronous /act ping-pong: neither sandbox is CPU-bound (measured 0.64 CPU
+# average, 2 throttled CFS periods out of 1690), but at a 1-CPU ceiling the HTTP server thread,
+# the interpreter and the kernel's network path serialise against each other. Doubling the ceiling
+# halved the per-step cost — 14.99 -> 7.71 ms measured on the same suite — while median policy
+# inference barely moved (0.525 -> 0.510 ms), which is the signature of a concurrency ceiling
+# rather than starvation. The platform derives cpu_request as 25% of this, so 2 also lifts the
+# scheduling guarantee from 250m to 500m.
 resources:
-  cpu_limit: 1
+  cpu_limit: 2
   mem_limit: 1.5Gi
   gpu_count: 0
 
@@ -18,64 +27,83 @@ resources:
 # .github/workflows/release.yml). `image` is the PLAYER image (loads + serves the miner's ONNX
 # policy).
 #
-# !! STALE — these are the v0.3.3 digests. The referee image changes in 0.4.0; re-pin both from
-# the 0.4.0 release run before shipping. The platform pins by digest and rejects tags.
+# Pinned from the v0.4.0 release run (Actions run 31144710178). Both digests resolved from ghcr
+# by tag and verified with `cosign verify`: signature present, issuer is the GitHub OIDC endpoint,
+# and the cert SAN is this file's `cosign_identity` at refs/tags/v0.4.0, over source 2aa2942.
+# The platform pins by digest and rejects tags.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-player
-  digest: sha256:b5552649c857a111b9d44323d1801149933587b372307288ee94f8b2d4d473d5
+  digest: sha256:fea246508e46156e52569144b3bb11fb79397ecad16f51578a0870170237df6c
 
 # ONNX artifact: the miner submits a policy graph, not code. The player image validates the
 # interface at load time (obs [batch,104] + state_in [batch,256] -> action [batch,12] +
 # state_out [batch,256], all float32); there is no code to screen and no Layer-2 screen image.
 #
-# 25 MB, set against measurement rather than taste. Every Unitree reference locomotion policy
-# (G1, H1, H1-2) is 0.13-0.14 MB, so this is ~180x the class of policy this task actually needs,
-# and it still fits a 6-layer d=256 transformer over a history window (~5M params, ~20 MB).
+# 15 MB, lowered from 25 in 0.5.0. This IS a compute limit, which 0.4.0 got wrong.
 #
-# It is NOT a compute limit: measured single-threaded, a 5.5M-param net runs 0.35 ms/step, so a
-# full-survival run (96,000 inferences) costs 34 s against ~640 s of slack in the referee budget.
-# Even 74 MB would fit here. The cap exists because surplus capacity buys nothing on a
-# proprioception + height-scan control problem. It is no longer load-bearing against
-# memorisation — 0.4.0 draws conditions from the round seed, which is what makes a memorised
-# suite worthless — so it can be revisited if a generalising policy turns out to want capacity.
+# 0.4.0 claimed "NOT a compute limit: a 5.5M-param net runs 0.35 ms/step, so a full-survival run
+# costs 34 s". That figure came from a host-side probe. Measured IN the player sandbox on
+# evaluation hardware, a 5.89M-param / 22.5 MiB graph costs 2.62 ms/step — 7.5x the claim, or
+# ~252 s over a full-survival run, not 34 s. Inference is linear in artifact size (six models,
+# 0.13-22.5 MiB, residuals <= 0.012 ms), so size maps directly onto referee wall clock.
+#
+# Worse, size costs more than its own inference: going 0.13 -> 22.5 MiB added 4.89 ms/step of
+# which only 2.11 ms was inference. The rest is systemic — most plausibly cache and memory
+# pressure, since the player and referee share a node. At the 25 MB cap a full-survival run
+# projected to ~1,200 s against the referee's 900 s timeout.
+#
+# 15 MB pairs with max_steps_per_episode 3000 (see input.schema.json) to bring the worst case to
+# ~750 s. Every Unitree reference locomotion policy (G1, H1, H1-2) is 0.13-0.14 MB, so 15 MB is
+# still ~110x the class of policy this task needs and comfortably fits a ~3.9M-parameter net.
+#
+# The cap is not load-bearing against memorisation any more — 0.4.0 draws conditions from the
+# round seed, which is what makes a memorised suite worthless. It is load-bearing against the
+# timeout, which is why it cannot simply be raised again without re-measuring.
 #
 # The architecture itself is NOT constrained; only the tensor signature is.
 submission:
   artifact_type: onnx
-  max_size_mb: 25
+  max_size_mb: 15
   target_path: /app/submission.onnx
 
 screening:            # Layer-1 generic weights validator (onnx artifact_type)
-  max_size_mb: 25
+  # Must match submission.max_size_mb: this is the gate that actually rejects, and it runs before
+  # the artifact is uploaded (backend.utils.submission_utils._passes_competition_screener).
+  max_size_mb: 15
   min_weight_bytes: 10000        # rejects near-empty graphs / constant policies
-  max_code_weight_ratio: 0.1
+  max_code_weight_ratio: 0.1     # ignored for onnx — a graph carries no code
 
 input_schema:
   $ref: ./input.schema.json
 
 defaults:
   baseline_score: 0.0
-  # !! STALE — DO NOT SHIP THIS NUMBER. It is 0.3.3's figure, measured against a fixed suite in
-  # still air. 0.4.0 draws friction and wind per instance (env/sim.instance_spec) and enables
-  # MuJoCo's fluid model, both of which move it. Re-measure before release.
+  # MEAN over a seed sweep, not a constant: 0.4.0 draws friction and wind from the round seed, so
+  # a policy's score is a random variable over rounds. Measured in the referee image on native
+  # amd64 (a host-side measurement differs by ~0.04% and an arm64 build by ~0.12%, against a 1%
+  # takeover margin; published images are amd64-only and a 24-instance suite does not finish in
+  # 15 hours under qemu).
   #
-  # It is also no longer a constant. With conditions drawn from the round seed, a policy's score
-  # is a random variable over seeds, so this field must be the MEAN over a seed sweep, with the
-  # spread recorded in HANDOFF.md. .github/workflows/measure-baseline.yml takes a `seed` input
-  # for exactly this; run it across >= 20 seeds and pin the mean.
+  # v0.4.0, runs 31145125337 / 31145130114 / 31145134945, 24 instances x 4000 steps:
+  #   seed 1  0.21575696094883565
+  #   seed 2  0.21245392681077288
+  #   seed 3  0.21668923138720390
+  # mean 0.21497, stdev 0.0022, standard error 0.0013.
   #
-  # Still measured IN THE REFEREE IMAGE ON NATIVE amd64: a host-side measurement differs by 0.04%
-  # and an arm64 build of this image by 0.12%, against a 1% takeover margin. Published images are
-  # amd64-only and under qemu a 24-instance suite does not finish in 15 hours.
-  baseline_raw_score: 0.2007
+  # !! PROVISIONAL — three seeds. The standard error (0.0013) is ~62% of the ~0.0021 takeover
+  # margin, so this number is good enough for PR-environment plumbing but NOT for stage or prod,
+  # where it decides who takes the top slot. Re-run measure-baseline.yml across >= 20 seeds
+  # (standard error ~0.0006) and re-pin the mean before promoting. HANDOFF.md carries the spread.
+  baseline_raw_score: 0.2150
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
   lower_is_better: false
 
 entrypoints:
   # The PLAYER sandbox: serves the ONNX policy over gym_v1; the referee drives it one
-  # observation at a time. timeout_s must cover the whole evaluation (24 instances x <=4000
-  # control steps): measured 67 s for the baseline, ~258 s for a policy that survives every step.
+  # observation at a time. timeout_s must cover the whole evaluation (24 instances x <=3000
+  # control steps = 72,000 /act calls): measured 207 s for the baseline on evaluation hardware,
+  # and ~750 s worst case for a max-size policy that survives every step, against referee 900 s.
   evaluate:
     command: ["python", "/app/launch.py", "--port", "8000"]
     network_disabled: false   # the referee must reach the player on the per-job network
@@ -96,9 +124,15 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-referee
-    digest: sha256:14902b2913d7f6f6d681c83fceeffcee5181de447d3b4536dcf0b8c6c9af4c86
+    digest: sha256:f895c5746b712312f3d9a0b36eb60cdd2195df7a0a5f53529f073a8002aacf2b
   timeout_s: 900
 
 signature:
-  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/.github/workflows/release.yml
+  # The `@refs/tags/*` suffix is REQUIRED, not decoration. A GitHub keyless signature's Fulcio
+  # certificate carries the SAN `<workflow path>@<ref>` — verified on our own signatures, which
+  # read `…/release.yml@refs/tags/v0.4.0`. The registry syncer anchors a glob-free identity as an
+  # exact-match regexp, so the bare path can never match and the spec is silently skipped on every
+  # sync pass. The registry had to patch this locally for 0.2.0
+  # (apex-competitions-registry@49193d9); fixing it here means the registry copy no longer has to.
+  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/.github/workflows/release.yml@refs/tags/*
   cosign_issuer: https://token.actions.githubusercontent.com
