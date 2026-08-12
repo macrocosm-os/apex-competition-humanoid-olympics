@@ -6,8 +6,13 @@
 # a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
 #
 # As of 0.4.0 friction and wind are drawn from the round seed, so raw_score is a random variable
-# over seeds. Run this across several seeds and pin the MEAN in spec.yaml
-# `defaults.baseline_raw_score`, recording the spread in HANDOFF.md.
+# over seeds. This measures ONE seed; run it across several to see the spread.
+#
+# It does NOT feed `spec.yaml defaults.baseline_raw_score`, which is deliberately 0.0 — that field
+# is the platform's entry bar, not a description of the baseline, and pinning it to a measured
+# mean risks stalling the competition on measurement noise (see the `defaults` block in spec.yaml).
+# What this workflow is for: judging submissions by eye against a known reference, and measuring
+# sigma_round. Record results in HANDOFF.md.
 name: measure-baseline
 
 on:
@@ -17,8 +22,8 @@ on:
         description: "Instances in the suite (must match fixtures/input.json)"
         default: "24"
       max_steps:
-        description: "Control-step cap per instance"
-        default: "4000"
+        description: "Control-step cap per instance (input.schema.json maximum: 3000)"
+        default: "3000"
       seed:
         description: "Round seed: sets every instance's friction and wind"
         default: "1"
@@ -79,7 +84,7 @@ jobs:
         run: |
           python -m pip install --quiet onnxruntime==1.28.0 numpy==2.3.4 mujoco==3.11.0 onnx \
             torch --extra-index-url https://download.pytorch.org/whl/cpu
-          # The 25 MB cap is only defensible if a model that big still fits the referee's time
+          # The 15 MB cap is only defensible if a model that big still fits the referee's time
           # budget on the hardware the platform runs, not on a dev laptop. Fails loudly if not.
           PYTHONPATH=. python tools/latency_probe.py | tee /tmp/latency.txt
           { echo '### inference latency on this runner'; echo '```'; cat /tmp/latency.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
