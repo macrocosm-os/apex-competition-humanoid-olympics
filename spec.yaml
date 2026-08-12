@@ -78,46 +78,10 @@ input_schema:
 
 defaults:
   baseline_score: 0.0
-  # DELIBERATELY 0.0, not the measured baseline. This field is the ENTRY BAR, not a normalizer:
-  # the platform computes `score_to_beat = max(baseline_raw_score, current_top_raw) * 1.01` and
-  # elects a winner on `eval_raw_score > score_to_beat` (backend `determine_solo_winner`). It does
-  # not rescale anyone's score — spec-driven competitions report eval_score == eval_raw_score.
-  #
-  # Two properties of that formula decide this value:
-  #
-  #   1. It binds until FIRST BLOOD, not just in round 1. If nobody clears the bar,
-  #      curr_top_score_id stays null and every subsequent round falls back to this number again.
-  #      A bar set too high does not slow the competition down, it stalls it — no winner, and
-  #      emissions burn, indefinitely.
-  #   2. After first blood it stops mattering. The scheduler auto-resubmits the reigning top
-  #      scorer into each new round and re-scores it on that round's input, and THAT score becomes
-  #      the bar. So this field governs entry and nothing else.
-  #
-  # The measured baseline (0.21497, below) was the obvious value and is the wrong one here. Since
-  # 0.4.0 draws friction and wind from the round seed the baseline is a random variable, and three
-  # seeds put its standard error at ~62% of the takeover margin — so a bar pinned to the point
-  # estimate could sit above the true value and stall the competition on measurement noise alone.
-  # Staging adds a second, independent way to stall: its sandbox pool is shared vCPU (apex-mvp
-  # #438), and the resulting per-step cost can time out precisely the strong policies that would
-  # otherwise clear the bar. A zero bar is immune to both.
-  #
-  # The cost, stated plainly: the threshold is MULTIPLICATIVE, so 0.0 * 1.01 = 0.0 and the 1%
-  # margin degenerates to nothing. Round 1 is won by any submission scoring above zero — and
-  # because raw_score is mean PROGRESS, a policy that emits nothing and topples forward moves
-  # max_x a few centimetres and qualifies. That is accepted: it self-corrects in one round, since
-  # the tip-over winner is auto-resubmitted at ~0.002 and any real walker at ~0.215 takes the slot
-  # immediately. Bootstrapping cost is one round; a stall has no bound.
-  #
-  # Measured anyway, and kept because it is the number to judge submissions against by eye.
-  # Referee image, native amd64 (host-side differs ~0.04%, an arm64 build ~0.12%; published images
-  # are amd64-only and a 24-instance suite does not finish in 15 hours under qemu).
-  # v0.4.0, runs 31145125337 / 31145130114 / 31145134945, 24 instances x 4000 steps:
-  #   seed 1  0.21575696094883565
-  #   seed 2  0.21245392681077288
-  #   seed 3  0.21668923138720390
-  # mean 0.21497, stdev 0.0022, standard error 0.0013. A 12-seed host-side sweep agrees
-  # (stdev 0.0025). Corresponds to ~10.4 m of the 51.1 m course: it clears the on-ramp and goes
-  # down at the drop.
+  # 0.0 by choice. This is the platform's ENTRY BAR (score_to_beat = max(this, top_raw) * 1.01),
+  # and it binds until first blood — pinned to the measured 0.21497 (3 seeds, standard error ~62%
+  # of the takeover margin) it could sit above the true baseline and stall the round forever.
+  # Cost: round 1 goes to anything scoring > 0; self-corrects on the first real walker. HANDOFF.md.
   baseline_raw_score: 0.0
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
