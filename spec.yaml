@@ -78,23 +78,11 @@ input_schema:
 
 defaults:
   baseline_score: 0.0
-  # MEAN over a seed sweep, not a constant: 0.4.0 draws friction and wind from the round seed, so
-  # a policy's score is a random variable over rounds. Measured in the referee image on native
-  # amd64 (a host-side measurement differs by ~0.04% and an arm64 build by ~0.12%, against a 1%
-  # takeover margin; published images are amd64-only and a 24-instance suite does not finish in
-  # 15 hours under qemu).
-  #
-  # v0.4.0, runs 31145125337 / 31145130114 / 31145134945, 24 instances x 4000 steps:
-  #   seed 1  0.21575696094883565
-  #   seed 2  0.21245392681077288
-  #   seed 3  0.21668923138720390
-  # mean 0.21497, stdev 0.0022, standard error 0.0013.
-  #
-  # !! PROVISIONAL — three seeds. The standard error (0.0013) is ~62% of the ~0.0021 takeover
-  # margin, so this number is good enough for PR-environment plumbing but NOT for stage or prod,
-  # where it decides who takes the top slot. Re-run measure-baseline.yml across >= 20 seeds
-  # (standard error ~0.0006) and re-pin the mean before promoting. HANDOFF.md carries the spread.
-  baseline_raw_score: 0.2150
+  # 0.0 by choice. This is the platform's ENTRY BAR (score_to_beat = max(this, top_raw) * 1.01),
+  # and it binds until first blood — pinned to the measured 0.21497 (3 seeds, standard error ~62%
+  # of the takeover margin) it could sit above the true baseline and stall the round forever.
+  # Cost: round 1 goes to anything scoring > 0; self-corrects on the first real walker. HANDOFF.md.
+  baseline_raw_score: 0.0
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them
   lower_is_better: false

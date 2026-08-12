@@ -54,26 +54,30 @@ replaces measuring it:
 - Only friction and wind vary. Holding geometry fixed keeps that interaction much smaller than
   full course randomisation would.
 
-**Two things must happen before this ships:**
+**One thing must happen before this ships:**
 
-1. **Measure σ_round** over ≥20 seeds with a policy that gets deep into the course, then set the
-   takeover threshold (or `num_instances`) against it. The 0.0036 above is extrapolated from a
-   baseline whose variance is bimodal — it either clears the on-ramp or does not — so treat it as
-   an order of magnitude, not a result.
-2. **Confirm the platform injects a fresh `seed` into the round input every round.** The whole
+1. **Confirm the platform injects a fresh `seed` into the round input every round.** The whole
    property rests on it. `seed` is `required` in `input.schema.json` so a missing one fails loudly
    rather than silently freezing the suite, and the referee prefers the round input over the
    platform's `SEED` env — but nothing on our side detects the same seed being sent twice.
+
+**σ_round no longer blocks release.** It used to, through `baseline_raw_score`: a bar pinned to a
+noisy point estimate could sit above the true baseline and stall the competition. Setting
+`baseline_raw_score: 0.0` removes that coupling — see the `defaults` block in `spec.yaml` for the
+full argument. σ_round still sets how much round-to-round rank churn to expect once the
+competition is running, so it is worth measuring, but it is now an observation rather than a gate.
 
 ### 2. `submission_reveal_days: 5` (production default is 1, range 1–7)
 
 Trained locomotion policies carry real R&D. Per the skill's own guidance ("4–7 days where a
 winning solution embodies real IP"), 5 days sits in range.
 
-### 3. No stage validation yet
+### 3. Validated in the PR environment, not yet on stage
 
-The full loop has been exercised locally by hand and in CI, but not on stage. That is the one
-checklist item this repo cannot close on its own.
+The full loop has been exercised locally, in CI, and end to end in the PR environment — gym_v1
+solo evaluation, both artifact channels delivered, and an offline replay reproducing the graded
+`eval_raw_score` exactly. Stage activation is pending in apex-competitions-registry #25. That is
+the one checklist item this repo cannot close on its own.
 
 ## Measured
 
@@ -85,7 +89,8 @@ unaffected in kind: wind adds no allocation and no rays, and history buffers one
 
 | | |
 |---|---|
-| `baseline_raw_score` | **0.2150** — mean of 3 seeds, native amd64 (see below) |
+| `baseline_raw_score` | **0.0** by choice — the entry bar, not a normalizer (see below) |
+| measured baseline | **0.21497** — mean of 3 seeds, native amd64; ~10.4 m of 51.1 m |
 | completions | 0 of 24 — furthest 10.97–11.31 m of 51.1 m |
 | eval wall time | 74–80 s on a CI amd64 runner; **207 s in the PR environment** at cpu_limit 2 |
 | worst case | ~750 s vs the 900 s timeout, at the 15 MB cap and 3000 steps (see below) |
@@ -94,7 +99,7 @@ unaffected in kind: wind adds no allocation and no rays, and history buffers one
 | per-instance stdev | 0.0034–0.0164 depending on seed |
 | determinism | bit-identical across two separate amd64 CI runners at a fixed seed |
 
-### σ_round, and why `baseline_raw_score` is provisional
+### σ_round, and why `baseline_raw_score` is 0.0
 
 v0.4.0 draws conditions per round, so the baseline is a random variable. Measured in the referee
 image on native amd64 (runs 31145125337 / 31145130114 / 31145134945):
@@ -109,11 +114,24 @@ mean **0.21497**, σ_round **0.0022**, standard error **0.0013**. A 12-seed host
 (σ_round 0.0025; host mean differs from the in-image mean by 0.00003, far inside the noise), so
 σ_round is real and close to the 0.0036 this document originally extrapolated.
 
-**This is not enough for stage or prod.** The standard error is ~62% of the ~0.0021 takeover
-margin, so the bar could be set off by most of a takeover step in either direction. Three seeds
-is sized for PR-environment plumbing only. Re-run across ≥20 seeds (standard error ~0.0006)
-before promoting. The caveat above still stands: the baseline's variance is bimodal — it either
-clears the on-ramp or does not — so a policy that gets deep into the course may vary more.
+**This is why the shipped `baseline_raw_score` is 0.0 rather than 0.21497.** The standard error is
+~62% of the ~0.0021 takeover margin, so a bar pinned to the point estimate could sit above the
+true baseline. That matters more than it looks: the field is the entry bar and it binds until
+*first blood*, not just in round 1 — if nobody clears it, `curr_top_score_id` stays null and every
+later round falls back to it again, so a bar set too high stalls the competition outright rather
+than merely slowing it. After first blood the field is inert: the scheduler auto-resubmits the
+reigning top scorer each round and re-scores it on that round's input, and that becomes the bar.
+
+Setting it to 0.0 trades a bounded cost for an unbounded one. The threshold is multiplicative
+(`best_raw * 1.01`), so at zero the 1% margin degenerates and round 1 is won by any submission
+scoring above zero — and since `raw_score` is mean progress, a policy that emits nothing and
+topples forward qualifies. That self-corrects in one round: the tip-over winner is auto-resubmitted
+at ~0.002 and any real walker at ~0.215 takes the slot. A stall has no such bound.
+
+So **the ≥20-seed sweep is no longer a release gate.** σ_round still describes how much
+round-to-round rank churn to expect, and the measurement is worth having, but nothing depends on
+it now. The bimodality caveat stands for anyone who does run it: the baseline either clears the
+on-ramp or does not, so a policy that gets deep into the course may vary more.
 
 Architecture sensitivity, all inside the 1% takeover margin — which is why the spec figure is
 pinned to amd64-in-image:
@@ -172,15 +190,22 @@ Walked against `reference/security-checklist.md`:
 
 ## Known follow-ups
 
-1. **Re-measure `baseline_raw_score`** as a mean over ≥20 seeds, and record the spread. Blocks
-   release; the spec field currently carries a stale 0.3.3 number and says so.
-2. **Measure σ_round and set the takeover threshold against it** (see deviation 1). The one open
-   design question this change introduces.
-3. **Confirm the platform sends a fresh `seed` every round** (see deviation 1).
-4. **Re-pin both image digests** from the 0.4.0 release run.
-5. **Stage validation.**
-6. **Fleet CPU homogeneity** — the open platform question. Same-generation reproducibility is
-   demonstrated; cross-generation is not, and it cannot be tested from this repo.
+1. **Confirm the platform sends a fresh `seed` every round** (see deviation 1). The one item that
+   still blocks; nothing on our side detects a repeated seed.
+2. **Measure σ_round** over ≥20 seeds with a policy that gets deep into the course, and record the
+   spread. **No longer a release gate** — `baseline_raw_score: 0.0` removed the dependency — but it
+   is what tells us how much round-to-round rank churn to expect, and whether the 1% takeover
+   margin is doing useful work once the competition is running.
+3. **Fleet CPU homogeneity** — the open platform question, and no longer only theoretical. Stage's
+   sandbox node pool is DigitalOcean Basic (shared vCPU) where prod is General Purpose
+   (dedicated), so per-step cost on stage runs 18.7–24.4 ms against the ~12 ms the 3000-step cap
+   was sized on — enough to time out a policy that survives every instance. Fix in apex-mvp #438.
+   Same-generation reproducibility is demonstrated; cross-generation is not, and neither can be
+   tested from this repo.
+
+Closed since the first draft: image digests re-pinned from the 0.4.0 release run (`d2e0cb0`), and
+the full loop validated end to end in the PR environment — gym_v1 solo evaluation, both artifact
+channels delivered, and an offline replay reproducing the graded `eval_raw_score` exactly.
 
 ## Evaluation wall clock — the 0.5.0 sizing (measured in the PR environment)
 
