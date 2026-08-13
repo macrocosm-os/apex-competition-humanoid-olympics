@@ -202,7 +202,6 @@ baseline/       the reference policy and where its number came from
 tools/          baseline export, local eval, course preview, history replay
 docs/           design notes
 spec.yaml       the competition manifest
-HANDOFF.md      platform-review notes: deviations, measurements, security walk
 ```
 
 ## Running it end to end

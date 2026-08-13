@@ -81,7 +81,7 @@ defaults:
   # 0.0 by choice. This is the platform's ENTRY BAR (score_to_beat = max(this, top_raw) * 1.01),
   # and it binds until first blood — pinned to the measured 0.21497 (3 seeds, standard error ~62%
   # of the takeover margin) it could sit above the true baseline and stall the round forever.
-  # Cost: round 1 goes to anything scoring > 0; self-corrects on the first real walker. HANDOFF.md.
+  # Cost: round 1 goes to anything scoring > 0; self-corrects on the first real walker.
   baseline_raw_score: 0.0
   round_length_in_days: 2
   submission_reveal_days: 5      # trained policies carry real R&D; protect them

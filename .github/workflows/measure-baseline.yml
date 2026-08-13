@@ -12,7 +12,8 @@
 # is the platform's entry bar, not a description of the baseline, and pinning it to a measured
 # mean risks stalling the competition on measurement noise (see the `defaults` block in spec.yaml).
 # What this workflow is for: judging submissions by eye against a known reference, and measuring
-# sigma_round. Record results in HANDOFF.md.
+# sigma_round. Record results in the platform-review notes (apex-competitions-registry,
+# competitions/humanoid_parkour/HANDOFF.md) -- deliberately NOT in this public repo.
 name: measure-baseline
 
 on:
