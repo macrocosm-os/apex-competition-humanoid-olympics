@@ -124,10 +124,6 @@ artifacts alongside `result.json`, both collected by the platform and listed on 
 | **history** — 24 × `instance_NN.json` | the robot's pose and the policy's action at every recorded step, plus the friction and wind the instance was drawn with | the referee writes `/data/history/`; collected as `FileType.HISTORY` |
 | **log** — one line per API call | every `/health`, `/reset` and `/act` the referee made, with latency and status | the player sandbox's stdout; collected as `FileType.LOG` |
 
-This is the same channel [tron](https://github.com/macrocosm-os/apex-competition-tron) uses for
-`/data/trace.jsonl`. A directory is used instead of one JSONL because parkour runs all 24
-instances in **one** referee container, so the per-game unit is a file rather than a line.
-
 Miners download both after the round (`eval_file_paths` on the submission), and
 `tools/replay.py` plays a history file back:
 
