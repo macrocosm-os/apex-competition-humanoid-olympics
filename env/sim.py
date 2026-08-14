@@ -23,6 +23,9 @@ Observation (float32, OBS_DIM = 104), all in the robot's yaw frame unless noted:
     [52:97]   height scan, 9 x 5 grid, surface height relative to the pelvis
     [97:104]  overhead clearance, 7 samples ahead
 
+The downward channels ([51] and the scan) report WALKABLE SURFACES only; overhead structures such
+as the duck bar appear in [97:104] and nowhere else. See `course.OVERHEAD_GROUP`.
+
 Action (float32, ACT_DIM = 12): joint position targets as offsets from the default pose,
 scaled by ACTION_SCALE and clipped to the joint limits.
 
@@ -32,7 +35,8 @@ seed, so the suite differs every round — see `instance_spec`.
 
 Termination gates (each maps to a terminal_reason the miner sees post-round):
     completed       pelvis past the finish line
-    fell            pelvis under FALL_CLEARANCE above the surface below it, or torso past ~66 deg
+    fell            pelvis under FALL_CLEARANCE above the walkable surface below it, or torso
+                    past ~66 deg
     out_of_bounds   |y| > TRACK_HALF_W (no walking around the course)
     physics_glitch  NaN/Inf state or |qvel| > 100 (glitch-surfing scores 0)
     timeout         max_steps control steps elapsed
@@ -46,8 +50,8 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from .course import (COURSE_LENGTH, GEOM_PREFIX, PLINTH_TOP, SEGMENTS, TRACK_HALF_W, WORLD_GROUP,
-                     course_xml_fragment, overhead_geoms, sample_frictions)
+from .course import (COURSE_LENGTH, GEOM_PREFIX, OVERHEAD_GROUP, PLINTH_TOP, SEGMENTS,
+                     TRACK_HALF_W, WORLD_GROUP, course_xml_fragment, sample_frictions)
 
 ASSETS = pathlib.Path(__file__).parent / "assets"
 
@@ -170,7 +174,6 @@ def instance_spec(i: int, n: int, seed: int,
 
 _MODEL: mujoco.MjModel | None = None
 _COURSE_GEOMS: list[int] = []
-_OVERHEAD_GEOMS: set[int] = set()
 
 
 def _shared_model() -> tuple[mujoco.MjModel, list[int]]:
@@ -194,7 +197,6 @@ def _shared_model() -> tuple[mujoco.MjModel, list[int]]:
         _MODEL.opt.density = AIR_DENSITY
         n = sum(len(s.boxes) for s in SEGMENTS)
         _COURSE_GEOMS.extend(_MODEL.geom(f"{GEOM_PREFIX}{i}").id for i in range(n))
-        _OVERHEAD_GEOMS.update(_COURSE_GEOMS[i] for i in overhead_geoms(SEGMENTS))
     return _MODEL, _COURSE_GEOMS
 
 
@@ -211,10 +213,16 @@ class ParkourSim:
         self.model.opt.wind[:] = self.params.wind
         self.data = mujoco.MjData(self.model)
         self._pelvis = self.model.body("pelvis").id
-        # Scan rays must hit the course, not the robot. mj_ray filters by RENDER GROUP, so the
-        # course is emitted into WORLD_GROUP and this mask admits only that group.
+        # Rays must hit the course, not the robot. mj_ray filters by RENDER GROUP, so the course
+        # is emitted into WORLD_GROUP and these masks admit course geoms only. DOWNWARD rays --
+        # the fall gate and the height scan -- admit walkable surfaces alone, so an overhead
+        # structure can never answer "what is the ground here?". UPWARD rays admit both, which is
+        # how the duck-under stays visible.
         self._ray_mask = np.zeros(6, np.uint8)
         self._ray_mask[WORLD_GROUP] = 1
+        self._up_mask = np.zeros(6, np.uint8)
+        self._up_mask[WORLD_GROUP] = 1
+        self._up_mask[OVERHEAD_GROUP] = 1
         self._geomid = np.zeros(1, np.int32)
         self.steps = 0
         self.max_x = START_X
@@ -269,27 +277,10 @@ class ParkourSim:
                           np.array([0.0, 0.0, -1.0]), self._ray_mask, 1, -1, self._geomid)
         return z_from - d if d >= 0 else -SCAN_CLIP
 
-    def _deck_below(self, x: float, y: float, z_from: float) -> float:
-        """World height of the terrain below (x, y), looking past overhead structures.
-
-        `_ray_down` stops at the first surface it meets, which above the duck bar is the bar's top
-        face rather than the deck. Restarting the ray under each overhead geom it hits finds the
-        surface the robot is actually supported by, and leaves every walkable surface untouched --
-        a deck above the pelvis is still reported, so sinking into one still reads as a fall.
-        """
-        for _ in range(len(_OVERHEAD_GEOMS) + 1):
-            surface = self._ray_down(x, y, z_from)
-            gid = int(self._geomid[0])
-            if gid not in _OVERHEAD_GEOMS:
-                return surface
-            # Overhead geoms are axis-aligned boxes, so this is their underside.
-            z_from = float(self.model.geom_pos[gid, 2] - self.model.geom_size[gid, 2]) - 1e-3
-        return -SCAN_CLIP
-
     def _ray_up(self, x: float, y: float, z_from: float) -> float:
         """Clearance above (x, y, z_from) up to SCAN_CLIP; SCAN_CLIP if nothing overhead."""
         d = mujoco.mj_ray(self.model, self.data, np.array([x, y, z_from]),
-                          np.array([0.0, 0.0, 1.0]), self._ray_mask, 1, -1, self._geomid)
+                          np.array([0.0, 0.0, 1.0]), self._up_mask, 1, -1, self._geomid)
         return SCAN_CLIP if d < 0 else min(d, SCAN_CLIP)
 
     def _obs(self) -> np.ndarray:
@@ -347,7 +338,7 @@ class ParkourSim:
         # Upright means the pelvis's own z axis still points up; xmat[8] is that axis's world z.
         if float(self.data.xmat[self._pelvis].reshape(3, 3)[2, 2]) < UPRIGHT_MIN:
             return "fell"
-        if pz - self._deck_below(px, py, pz + RAY_FROM_ABOVE) < FALL_CLEARANCE:
+        if pz - self._ray_down(px, py, pz + RAY_FROM_ABOVE) < FALL_CLEARANCE:
             return "fell"
         if self.steps >= max_steps:
             return "timeout"

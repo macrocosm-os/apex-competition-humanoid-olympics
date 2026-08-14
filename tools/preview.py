@@ -20,7 +20,7 @@ import mujoco
 import numpy as np
 
 from env import ParkourSim, instance_score, instance_spec
-from env.course import COURSE_LENGTH, FINAL_DECK
+from env.course import COURSE_LENGTH, FINAL_DECK, OVERHEAD_GROUP
 from env.sim import OBS_DIM, PLINTH_TOP, STATE_DIM, START_X, _mesh_assets, _scene_xml
 
 OUT = pathlib.Path("renders")
@@ -76,6 +76,7 @@ def _camera():
     cam, opt = mujoco.MjvCamera(), mujoco.MjvOption()
     mujoco.mjv_defaultCamera(cam)
     mujoco.mjv_defaultOption(opt)
+    opt.geomgroup[OVERHEAD_GROUP] = 1   # the visualiser shows 0-2 by default; the duck bar is 3
     return cam, opt
 
 
