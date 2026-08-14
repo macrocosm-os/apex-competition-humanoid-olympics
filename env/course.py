@@ -34,10 +34,15 @@ WORLD_GROUP = 2
 # model rather than baked into the XML.
 GEOM_PREFIX = "course_"
 
-# Kinds that are structures to pass rather than surfaces to stand on. A downward ray stops on the
-# first thing it meets, so without this the duck bar's top face answers "what is the ground here?"
-# with a slab 1.2 m above the deck. See `ParkourSim._deck_below`.
+# Kinds that are structures to pass UNDER rather than surfaces to stand on, and the group they
+# are emitted into. mj_ray stops at the first surface it meets and filters by render group, so
+# giving these their own group is what lets a DOWNWARD ray ignore them: without it the duck bar's
+# top face answers "what is the ground here?" with a slab 1.2 m above the deck, to the fall gate
+# and to the height scan alike. Upward rays still admit this group -- overhead clearance is how
+# the duck-under is meant to be visible (README). Group is a ray/render filter, NOT a collision
+# filter: condim/contype/conaffinity are untouched, so the bar is exactly as solid as before.
 OVERHEAD_KINDS = frozenset({"duck"})
+OVERHEAD_GROUP = 3
 
 # On-ramp shape, measured against the stock G1 walker (see docs/design.md): it climbs
 # 15.4 deg but stalls at 20.1 deg, so this is the steepest short climb a naive policy can still
@@ -168,19 +173,15 @@ def course_xml_fragment(segs, frictions=None):
             cx, cy, cz, sx, sy, sz, ck = b[:7]
             euler = f' euler="0 {b[7]:.4f} 0"' if len(b) > 7 else ""
             mu = 1.0 if frictions is None else frictions[i]
+            grp = OVERHEAD_GROUP if ck in OVERHEAD_KINDS else WORLD_GROUP
             # Named so the sim can set friction on the compiled model instead of recompiling
             # it per instance. Emission order is the contract with `sample_frictions`.
             out.append(f'    <geom name="{GEOM_PREFIX}{i}" type="box" '
                        f'pos="{cx:.3f} {cy:.3f} {cz:.3f}" '
-                       f'size="{sx:.3f} {sy:.3f} {sz:.3f}"{euler} condim="3" group="{WORLD_GROUP}" '
+                       f'size="{sx:.3f} {sy:.3f} {sz:.3f}"{euler} condim="3" group="{grp}" '
                        f'friction="{mu:.4f} .1 .1" rgba="{COLOR[ck]}"/>')
             i += 1
     return "\n".join(out)
-
-
-def overhead_geoms(segs) -> list[int]:
-    """Indices of the overhead geoms, in the same emission order as `course_xml_fragment`."""
-    return [i for i, b in enumerate(b for s in segs for b in s.boxes) if b[6] in OVERHEAD_KINDS]
 
 
 def nominal_mu(level: float) -> float:
