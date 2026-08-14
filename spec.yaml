@@ -125,5 +125,13 @@ signature:
   # exact-match regexp, so the bare path can never match and the spec is silently skipped on every
   # sync pass. The registry had to patch this locally for 0.2.0
   # (apex-competitions-registry@49193d9); fixing it here means the registry copy no longer has to.
-  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-parkour-v2/.github/workflows/release.yml@refs/tags/*
+  #
+  # The repo was RENAMED from `-v2` to the bare name after v0.4.0 was signed. A Fulcio SAN is
+  # built from the repository at signing time, so v0.4.0's cert reads `...-v2/...@refs/tags/v0.4.0`
+  # (verified by decoding the cert off the pinned referee digest) while everything signed from
+  # now on will read the bare name. Pinning the old name here would mean the 0.6.0 signature
+  # never matches and the spec is silently skipped on every sync pass -- the same failure the
+  # `@refs/tags/*` note below describes. The already-registered 0.4.0 and 0.5.0 specs keep the
+  # `-v2` identity, because their signatures predate the rename.
+  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-parkour/.github/workflows/release.yml@refs/tags/*
   cosign_issuer: https://token.actions.githubusercontent.com
