@@ -34,6 +34,11 @@ WORLD_GROUP = 2
 # model rather than baked into the XML.
 GEOM_PREFIX = "course_"
 
+# Kinds that are structures to pass rather than surfaces to stand on. A downward ray stops on the
+# first thing it meets, so without this the duck bar's top face answers "what is the ground here?"
+# with a slab 1.2 m above the deck. See `ParkourSim._deck_below`.
+OVERHEAD_KINDS = frozenset({"duck"})
+
 # On-ramp shape, measured against the stock G1 walker (see docs/design.md): it climbs
 # 15.4 deg but stalls at 20.1 deg, so this is the steepest short climb a naive policy can still
 # manage. Drop height barely matters — 0.20 m and 0.55 m both end its run — so we take the full
@@ -171,6 +176,11 @@ def course_xml_fragment(segs, frictions=None):
                        f'friction="{mu:.4f} .1 .1" rgba="{COLOR[ck]}"/>')
             i += 1
     return "\n".join(out)
+
+
+def overhead_geoms(segs) -> list[int]:
+    """Indices of the overhead geoms, in the same emission order as `course_xml_fragment`."""
+    return [i for i, b in enumerate(b for s in segs for b in s.boxes) if b[6] in OVERHEAD_KINDS]
 
 
 def nominal_mu(level: float) -> float:
