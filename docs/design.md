@@ -14,13 +14,13 @@ compiled MuJoCo G1 model at a time. A normal round has four attempts per event (
 
 | Event | maximum control steps | attempts | maximum calls |
 |---|---:|---:|---:|
-| 100 m | 2,500 | 4 | 10,000 |
-| 400 m | 5,000 | 4 | 20,000 |
-| 100 m hurdles | 3,000 | 4 | 12,000 |
-| high jump | 1,200 | 4 | 4,800 |
-| long jump | 1,800 | 4 | 7,200 |
-| triple jump | 2,400 | 4 | 9,600 |
-| **total** |  |  | **63,600** |
+| 100 m | 1,200 | 4 | 4,800 |
+| 400 m | 3,600 | 4 | 14,400 |
+| 100 m hurdles | 1,900 | 4 | 7,600 |
+| high jump | 900 | 4 | 3,600 |
+| long jump | 1,000 | 4 | 4,000 |
+| triple jump | 1,400 | 4 | 5,600 |
+| **total** |  |  | **40,000** |
 
 This is below the inherited 72,000-call control budget. The referee also stops scheduling new
 attempts after 840 seconds, leaving time for it to write a result before the 900-second sandbox
@@ -40,14 +40,16 @@ the previous 1.6 m horizon.
 
 ## Event rules
 
-- Sprint and hurdles end at their 100 m finish. Hurdles are physical 0.55 m barriers; contact
-  ends that attempt.
+- Sprint and hurdles end at their 100 m finish. Hurdles are physical 0.70 m barriers; any robot
+  contact ends that attempt.
 - High jump has a physical horizontal bar. The pelvis must cross the bar plane above the selected
-  clearance height without touching it.
-- Long jump has a runway, a 4 m gap, and a sand landing. The first supported final landing
-  determines the measured distance.
-- Triple jump uses a runway, hop pad, step pad, and final sand pit. The hop and step contacts
-  must occur in order, with the step on the opposite foot, before the final landing counts.
+  clearance height while both feet have been unsupported for 40 ms, without touching the bar, and
+  then make a supported far-side landing.
+- Long jump has a runway, a 6 m real void, and a sand landing. A legal attempt leaves a narrow
+  one-foot take-off board, remains airborne, and first regains sustained foot support on sand.
+- Triple jump uses a runway, hop pad, step pad, and final sand pit. It requires a one-foot board
+  take-off, same-foot hop landing, a real flight, opposite-foot step landing, another flight, and
+  sustained final sand support. Any early/wrong-surface or non-foot contact is a foul.
 
 All narrow gates, bar/hurdle contacts, and jump-phase contacts are sampled at each 500 Hz physics
 substep rather than only once per 20 ms policy action.
@@ -61,7 +63,7 @@ horizontal jumps are legal distance.
 
 Round conditions are derived deterministically from one seed. Within each event the friction and
 wind samples use a shifted lattice with opposing wind directions, reducing evaluation variance
-without freezing a known suite. High-jump attempts cycle through 0.80, 0.92, 1.04, and 1.16 m
+without freezing a known suite. High-jump attempts cycle through 1.00, 1.10, 1.20, and 1.30 m
 bar heights above the deck.
 
 The geometry and height band are implementation hypotheses until calibrated. Before the first

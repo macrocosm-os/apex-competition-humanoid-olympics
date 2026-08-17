@@ -18,7 +18,7 @@ from env import (ACT_DIM, EVENT_LABELS, EVENTS, OBS_DIM, STATE_DIM, OlympicsSim,
 from env.history import DEFAULT_STRIDE, InstanceRecorder, write_instance
 from env.sim import WIND_MAX_MS, InvalidAction
 
-DEFAULT_INSTANCES_PER_EVENT = 3
+DEFAULT_INSTANCES_PER_EVENT = 4
 DEFAULT_DEADLINE_MS = 500
 EVALUATION_BUDGET_S = 840.0
 HISTORY_DIR = pathlib.Path("/data/history")

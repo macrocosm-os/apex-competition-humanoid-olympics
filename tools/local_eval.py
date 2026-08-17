@@ -90,7 +90,7 @@ def evaluate(path: str, instances_per_event: int, seed: int = 1, verbose: bool =
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("artifact")
-    parser.add_argument("-n", "--instances-per-event", type=int, default=3)
+    parser.add_argument("-n", "--instances-per-event", type=int, default=4)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max-steps", type=int,
                         help="local testing cap applied to every event; omitted uses official limits")

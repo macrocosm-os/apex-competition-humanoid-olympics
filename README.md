@@ -2,13 +2,17 @@
 
 | | | |
 |---|---|---|
-| <img src="docs/images/100m-sprint-3d.png" alt="3D preview of the 100 m sprint" width="100%"><br><img src="docs/images/100m-sprint.svg" alt="100 m sprint geometry" width="100%"> | <img src="docs/images/400m-circular-sprint-3d.png" alt="3D preview of the 400 m circular sprint" width="100%"><br><img src="docs/images/400m-circular-sprint.svg" alt="400 m circular sprint geometry" width="100%"> | <img src="docs/images/100m-hurdles-3d.png" alt="3D preview of the 100 m hurdles" width="100%"><br><img src="docs/images/100m-hurdles.svg" alt="100 m hurdles geometry" width="100%"> |
-| <img src="docs/images/high-jump-3d.png" alt="3D preview of the high jump" width="100%"><br><img src="docs/images/high-jump.svg" alt="High jump geometry" width="100%"> | <img src="docs/images/long-jump-3d.png" alt="3D preview of the long jump" width="100%"><br><img src="docs/images/long-jump.svg" alt="Long jump geometry" width="100%"> | <img src="docs/images/triple-jump-3d.png" alt="3D preview of the triple jump" width="100%"><br><img src="docs/images/triple-jump.svg" alt="Triple jump geometry" width="100%"> |
+| <img src="docs/images/100m-sprint-hard-3d.png" alt="3D preview of the hard 100 m sprint" width="100%"><br><img src="docs/images/100m-sprint.svg" alt="100 m sprint geometry" width="100%"> | <img src="docs/images/400m-circular-sprint-hard-3d.png" alt="3D preview of the hard 400 m circular sprint" width="100%"><br><img src="docs/images/400m-circular-sprint.svg" alt="400 m circular sprint geometry" width="100%"> | <img src="docs/images/100m-hurdles-hard-3d.png" alt="3D preview of the hard 100 m hurdles" width="100%"><br><img src="docs/images/100m-hurdles.svg" alt="100 m hurdles geometry" width="100%"> |
+| <img src="docs/images/high-jump-hard-3d.png" alt="3D preview of the hard high jump" width="100%"><br><img src="docs/images/high-jump.svg" alt="High jump geometry" width="100%"> | <img src="docs/images/long-jump-hard-3d.png" alt="3D preview of the hard long jump" width="100%"><br><img src="docs/images/long-jump.svg" alt="Long jump geometry" width="100%"> | <img src="docs/images/triple-jump-hard-3d.png" alt="3D preview of the hard triple jump" width="100%"><br><img src="docs/images/triple-jump.svg" alt="Triple jump geometry" width="100%"> |
 
 Train one legs-only Unitree G1 controller to compete across a balanced six-event athletics meet.
 Each evaluation contains the same number of attempts of every discipline, and the leaderboard
 score is their equal-weight mean. The aim is a fast, adaptive, all-round humanoid athlete — not
 a policy specialised to one obstacle.
+
+The initial course preset is deliberately severe: a 24 s 100 m, 72 s circular 400 m, ten 0.70 m
+hurdles, 1.00–1.30 m high bars, a 6 m long-jump void, and wide legal triple-jump phases. A first
+complete all-round performance is intended to be a meaningful breakthrough.
 
 | Discipline | Skill tested |
 |---|---|
@@ -78,8 +82,8 @@ PYTHONPATH=. python tools/preview.py --event high_jump --attempt 2 --run baselin
 ```
 
 `--max-steps` is a local debugging cap. A scored meet uses each discipline's own official cap:
-2,500 steps for the 100 m, 5,000 for the 400 m, 3,000 for hurdles, and shorter event-specific
-caps for jumps.
+1,200 steps for the 100 m (24 s), 3,600 for the 400 m (72 s), 1,900 for hurdles, and shorter
+event-specific caps for jumps.
 
 To run both production images locally:
 

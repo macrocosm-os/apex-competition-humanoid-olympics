@@ -23,7 +23,7 @@ directory = pathlib.Path(sys.argv[1])
 expected = int(sys.argv[2])
 
 # One file per instance, named as the platform's FileType.HISTORY collector expects.
-names = sorted(p.name for p in directory.glob("*.json"))
+names = sorted(p.name for p in directory.glob("instance_*.json"))
 assert names == [f"instance_{i:02d}.json" for i in range(expected)], names
 
 runs = [Run(r) for r in read_all(directory)]

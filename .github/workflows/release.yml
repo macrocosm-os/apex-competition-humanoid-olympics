@@ -113,6 +113,9 @@ jobs:
           print('ok:', reasons)
           PY
 
+      - name: Hard event rules reject invalid traversals
+        run: PYTHONPATH=. python .github/scripts/check_event_rules.py
+
       - name: The baseline scores above zero (it seeds the leaderboard)
         run: |
           PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 1 \

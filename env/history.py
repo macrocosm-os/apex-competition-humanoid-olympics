@@ -23,8 +23,10 @@ import numpy as np
 
 from .sim import FRAME_SKIP, PHYS_DT
 
-# Bump the minor half when adding keys a reader can ignore, the major half when it cannot.
-FORMAT = "humanoid_olympics_history/1"
+# History records do not contain a full MJCF snapshot.  Changing event geometry
+# therefore makes old trajectories semantically unreplayable, even if their qpos
+# width still matches the robot.
+FORMAT = "humanoid_olympics_history/2"
 
 # Recording every control step is 50 Hz. 2 is the default because the replay renders at 25 fps
 # anyway (tools/replay.py picks a stride to hit ~30 fps), so at stride 2 the video is IDENTICAL
@@ -155,7 +157,7 @@ def write_instance(directory: str | pathlib.Path, record: dict[str, Any]) -> pat
 def read_instance(path: str | pathlib.Path) -> dict[str, Any]:
     record = json.loads(pathlib.Path(path).read_text())
     got = str(record.get("format", "?"))
-    if got.split("/")[0] != FORMAT.split("/")[0]:
+    if got != FORMAT:
         raise ValueError(f"{path} is not an evaluation history file (format {got!r})")
     return record
 

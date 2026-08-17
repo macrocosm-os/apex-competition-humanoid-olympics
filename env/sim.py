@@ -11,9 +11,9 @@ from typing import Mapping
 import mujoco
 import numpy as np
 
-from .course import (EVENT_MAX_STEPS, EVENTS, GEOM_PREFIX, OVERHEAD_GROUP, PLINTH_TOP,
-                     TRACK_HALF_W, WORLD_GROUP, EventLayout, build_event, course_xml_fragment,
-                     sample_frictions)
+from .course import (EVENT_MAX_STEPS, EVENTS, GEOM_PREFIX, HIGH_JUMP_BARS_M, OVERHEAD_GROUP,
+                     PLINTH_TOP, TRACK_HALF_W, WORLD_GROUP, EventLayout, build_event,
+                     course_xml_fragment, sample_frictions)
 
 ASSETS = pathlib.Path(__file__).parent / "assets"
 
@@ -47,7 +47,14 @@ DEFAULT_ANGLES = np.array([-0.1, 0.0, 0.0, 0.3, -0.2, 0.0,
                            -0.1, 0.0, 0.0, 0.3, -0.2, 0.0], np.float64)
 GAIT_PERIOD = 0.8
 
-HIGH_JUMP_BARS = (0.80, 0.92, 1.04, 1.16)
+# Event validity is watched at 500 Hz.  These hysteresis windows reject a
+# fleeting toe scrape while remaining tiny relative to a real flight phase.
+MIN_AIRBORNE_STEPS = 20       # 40 ms with no supporting feet
+MIN_SUPPORT_STEPS = 4         # 8 ms continuous legal support
+TAKEOFF_BOARD_BEFORE_M = 0.35
+TAKEOFF_BOARD_AFTER_M = 0.05
+HIGH_CLEARANCE_MARGIN_M = 0.08
+HIGH_LANDING_OFFSET_M = 0.75
 
 
 class InvalidAction(ValueError):
@@ -107,7 +114,7 @@ def instance_spec(event: str, attempt: int, seed: int, wind_max: float = WIND_MA
                 (attempt % 2) * math.pi) % (2.0 * math.pi)
     challenge: dict[str, float] = {}
     if event == "high_jump":
-        challenge["bar_height_m"] = HIGH_JUMP_BARS[attempt % len(HIGH_JUMP_BARS)]
+        challenge["bar_height_m"] = HIGH_JUMP_BARS_M[attempt % len(HIGH_JUMP_BARS_M)]
     episode_rng = np.random.default_rng([seed, event_index, attempt, 0x5151])
     return InstanceParams(event=event, attempt=attempt, seed=int(episode_rng.integers(1 << 31)),
                           friction_level=friction,
@@ -116,8 +123,10 @@ def instance_spec(event: str, attempt: int, seed: int, wind_max: float = WIND_MA
 
 def _scene_xml(layout: EventLayout) -> str:
     robot = (ASSETS / "g1_12dof.xml").read_text()
+    # Visible to downward terrain rays and the renderer, but never a support:
+    # a gap must be a real fall, not a lower route a policy can walk along.
     floor = (f'    <geom name="floor" type="plane" size="180 180 0.1" pos="0 0 0" '
-             f'condim="3" group="{WORLD_GROUP}" rgba=".15 .16 .19 1"/>\n')
+             f'contype="0" conaffinity="0" group="{WORLD_GROUP}" rgba=".15 .16 .19 1"/>\n')
     return robot.replace("</worldbody>", floor + course_xml_fragment(layout) + "\n  </worldbody>")
 
 
@@ -171,8 +180,8 @@ class OlympicsSim:
             self.model.body("left_ankle_roll_link").id: "left",
             self.model.body("right_ankle_roll_link").id: "right",
         }
-        self._surface_geom_ids = {geoms[i] for i, surface in enumerate(self.layout.surfaces)
-                                  if surface.walkable} | {self.model.geom("floor").id}
+        self._surface_kind_by_geom = {geoms[i]: surface.kind
+                                      for i, surface in enumerate(self.layout.surfaces)}
         self._obstacle_geom_ids = {
             surface.kind: geoms[i] for i, surface in enumerate(self.layout.surfaces)
             if not surface.walkable
@@ -192,7 +201,14 @@ class OlympicsSim:
         self._jump_distance = 0.0
         self._jump_landed = False
         self._triple_phase = 0
-        self._hop_foot: str | None = None
+        self._jump_state = "approach"
+        self._takeoff_foot: str | None = None
+        self._airborne_steps = 0
+        self._support_steps = 0
+        self._prev_x = self.layout.start_x
+        self._high_crossed = False
+        self._high_valid_crossing = False
+        self._high_airborne_steps = 0
         self._event_reason: str | None = None
 
     @property
@@ -243,7 +259,14 @@ class OlympicsSim:
         self._jump_distance = 0.0
         self._jump_landed = False
         self._triple_phase = 0
-        self._hop_foot = None
+        self._jump_state = "approach"
+        self._takeoff_foot = None
+        self._airborne_steps = 0
+        self._support_steps = 0
+        self._prev_x = float(self.data.qpos[0])
+        self._high_crossed = False
+        self._high_valid_crossing = False
+        self._high_airborne_steps = 0
         self._event_reason = None
         return self._obs()
 
@@ -269,6 +292,7 @@ class OlympicsSim:
 
     def _observe_physics_step(self) -> None:
         x, y, z = (float(v) for v in self.data.qpos[:3])
+        prev_x = self._prev_x
         self.max_x = max(self.max_x, x)
         if self.layout.is_circular:
             angle = math.atan2(y, x)
@@ -281,60 +305,201 @@ class OlympicsSim:
         if self.event == "hurdles_100" and self._hits("hurdle"):
             self._event_reason = "hurdle_hit"
         elif self.event == "high_jump":
-            self._observe_high_jump(x, z)
+            self._observe_high_jump(prev_x, x, z)
         elif self.event in {"long_jump", "triple_jump"}:
             self._observe_jump(x)
         elif self.event in {"sprint_100", "hurdles_100"} and x >= self.layout.finish:
             self._event_reason = "completed"
         elif self.event == "sprint_400" and self._circle_distance >= 400.0:
             self._event_reason = "completed"
+        self._prev_x = x
 
-    def _observe_high_jump(self, x: float, z: float) -> None:
+    def _observe_high_jump(self, prev_x: float, x: float, z: float) -> None:
+        """Require a real flight over the bar and a supported far-side landing."""
         bar_x = float(self.layout.challenge["bar_x_m"])
         height = float(self.layout.challenge["bar_height_m"])
         if self._hits("bar"):
             self._event_reason = "bar_hit"
             return
-        if abs(x - bar_x) <= 0.12:
+        contacts = self._foot_contacts()
+        self._high_airborne_steps = self._high_airborne_steps + 1 if not contacts else 0
+        if prev_x <= bar_x <= x:
+            self._high_crossed = True
             self._best_clearance = max(self._best_clearance, z - PLINTH_TOP)
-        if x >= bar_x + 0.45:
-            self._event_reason = "cleared" if self._best_clearance >= height + 0.06 else "bar_missed"
+            if (self._high_airborne_steps >= MIN_AIRBORNE_STEPS
+                    and self._best_clearance >= height + HIGH_CLEARANCE_MARGIN_M):
+                self._high_valid_crossing = True
+            else:
+                self._event_reason = "bar_missed"
+                return
+        if (self._high_valid_crossing and x >= bar_x + HIGH_LANDING_OFFSET_M and contacts
+                and not self._jump_contact_illegal(contacts, "track")):
+            self._event_reason = "cleared"
+        elif self._high_crossed and x >= bar_x + HIGH_LANDING_OFFSET_M and not self._high_valid_crossing:
+            self._event_reason = "bar_missed"
 
     def _observe_jump(self, x: float) -> None:
+        """Run the event-specific legal-contact state machine at each physics step."""
         takeoff = float(self.layout.challenge["takeoff_x_m"])
-        landing = float(self.layout.challenge["landing_x_m"])
         contacts = self._foot_contacts()
         if self.event == "triple_jump":
-            self._observe_triple_phase(x, contacts)
-        # The final sand is the only terminal landing. Feet are used rather than
-        # pelvis height so a clean flight through the edge is not scored early.
-        if x >= landing and contacts and (self.event != "triple_jump" or self._triple_phase >= 2):
-            if not self._jump_landed:
+            self._observe_triple_jump(x, takeoff, contacts)
+        else:
+            self._observe_long_jump(x, takeoff, contacts)
+
+    def _observe_takeoff(self, x: float, takeoff: float,
+                         contacts: dict[str, set[str]]) -> bool:
+        """Remember a one-foot take-off from the narrow legal board zone."""
+        feet = self._feet_on(contacts, "track")
+        if takeoff - TAKEOFF_BOARD_BEFORE_M <= x <= takeoff + TAKEOFF_BOARD_AFTER_M:
+            if len(feet) == 1:
+                self._takeoff_foot = next(iter(feet))
+        if contacts:
+            self._airborne_steps = 0
+            if x > takeoff + TAKEOFF_BOARD_AFTER_M and self._takeoff_foot is None:
+                self._event_reason = "jump_foul"
+            return False
+        if self._takeoff_foot is None:
+            if x > takeoff + TAKEOFF_BOARD_AFTER_M:
+                self._event_reason = "jump_foul"
+            return False
+        self._airborne_steps += 1
+        if self._airborne_steps < MIN_AIRBORNE_STEPS:
+            return False
+        self._airborne_steps = 0
+        return True
+
+    def _observe_long_jump(self, x: float, takeoff: float,
+                           contacts: dict[str, set[str]]) -> None:
+        if self._jump_state == "approach":
+            if self._observe_takeoff(x, takeoff, contacts):
+                self._jump_state = "long_flight"
+            return
+        if self._jump_contact_illegal(contacts, "sand"):
+            self._event_reason = "jump_foul"
+            return
+        if not contacts:
+            self._support_steps = 0
+            return
+        if not self._only_surface(contacts, "sand"):
+            self._event_reason = "jump_foul"
+            return
+        self._support_steps += 1
+        if self._support_steps >= MIN_SUPPORT_STEPS:
+            self._jump_distance = max(0.0, x - takeoff)
+            self._jump_landed = True
+            self._event_reason = "landed"
+
+    def _observe_triple_jump(self, x: float, takeoff: float,
+                             contacts: dict[str, set[str]]) -> None:
+        if self._jump_state == "approach":
+            if self._observe_takeoff(x, takeoff, contacts):
+                self._jump_state = "hop_flight"
+            return
+        if self._jump_state == "hop_flight":
+            self._triple_arrival(contacts, "hop_pad", self._takeoff_foot, "hop_support", 1)
+            return
+        if self._jump_state == "hop_support":
+            self._triple_departure(contacts, "hop_pad", self._takeoff_foot, "step_flight")
+            return
+        if self._jump_state == "step_flight":
+            opposite = "right" if self._takeoff_foot == "left" else "left"
+            self._triple_arrival(contacts, "step_pad", opposite, "step_support", 2)
+            return
+        if self._jump_state == "step_support":
+            opposite = "right" if self._takeoff_foot == "left" else "left"
+            self._triple_departure(contacts, "step_pad", opposite, "sand_flight")
+            return
+        if self._jump_state == "sand_flight":
+            if self._jump_contact_illegal(contacts, "sand"):
+                self._event_reason = "jump_foul"
+                return
+            if not contacts:
+                self._support_steps = 0
+                return
+            if not self._only_surface(contacts, "sand"):
+                self._event_reason = "jump_foul"
+                return
+            self._support_steps += 1
+            if self._support_steps >= MIN_SUPPORT_STEPS:
                 self._jump_distance = max(0.0, x - takeoff)
                 self._jump_landed = True
+                self._triple_phase = 3
                 self._event_reason = "landed"
 
-    def _observe_triple_phase(self, x: float, contacts: set[str]) -> None:
-        if not contacts:
+    def _triple_arrival(self, contacts: dict[str, set[str]], kind: str, foot: str | None,
+                        next_state: str, phase: int) -> None:
+        if self._jump_contact_illegal(contacts, kind):
+            self._event_reason = "jump_foul"
             return
-        if self._triple_phase == 0 and 13.5 <= x <= 15.5:
-            self._hop_foot = sorted(contacts)[0]
-            self._triple_phase = 1
-        elif self._triple_phase == 1 and 17.0 <= x <= 18.8:
-            if self._hop_foot is not None and any(side != self._hop_foot for side in contacts):
-                self._triple_phase = 2
+        if not contacts:
+            self._support_steps = 0
+            return
+        if foot is None or not self._only_foot_on(contacts, kind, foot):
+            self._event_reason = "jump_foul"
+            return
+        self._support_steps += 1
+        if self._support_steps >= MIN_SUPPORT_STEPS:
+            self._jump_state = next_state
+            self._triple_phase = phase
+            self._support_steps = 0
 
-    def _foot_contacts(self) -> set[str]:
-        contacts: set[str] = set()
+    def _triple_departure(self, contacts: dict[str, set[str]], kind: str, foot: str | None,
+                          next_state: str) -> None:
+        if self._jump_contact_illegal(contacts, kind):
+            self._event_reason = "jump_foul"
+            return
+        if contacts:
+            if foot is None or not self._only_foot_on(contacts, kind, foot):
+                self._event_reason = "jump_foul"
+            self._airborne_steps = 0
+            return
+        self._airborne_steps += 1
+        if self._airborne_steps >= MIN_AIRBORNE_STEPS:
+            self._jump_state = next_state
+            self._airborne_steps = 0
+
+    def _foot_contacts(self) -> dict[str, set[str]]:
+        contacts: dict[str, set[str]] = {"left": set(), "right": set()}
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             b1 = int(self.model.geom_bodyid[contact.geom1])
             b2 = int(self.model.geom_bodyid[contact.geom2])
-            if b1 in self._foot_bodies and contact.geom2 in self._surface_geom_ids:
-                contacts.add(self._foot_bodies[b1])
-            if b2 in self._foot_bodies and contact.geom1 in self._surface_geom_ids:
-                contacts.add(self._foot_bodies[b2])
-        return contacts
+            kind2 = self._surface_kind_by_geom.get(int(contact.geom2))
+            kind1 = self._surface_kind_by_geom.get(int(contact.geom1))
+            if b1 in self._foot_bodies and kind2 is not None:
+                contacts[self._foot_bodies[b1]].add(kind2)
+            if b2 in self._foot_bodies and kind1 is not None:
+                contacts[self._foot_bodies[b2]].add(kind1)
+        return {foot: kinds for foot, kinds in contacts.items() if kinds}
+
+    @staticmethod
+    def _feet_on(contacts: dict[str, set[str]], kind: str) -> set[str]:
+        return {foot for foot, kinds in contacts.items() if kind in kinds}
+
+    @staticmethod
+    def _only_surface(contacts: dict[str, set[str]], kind: str) -> bool:
+        return bool(contacts) and all(kinds == {kind} for kinds in contacts.values())
+
+    @staticmethod
+    def _only_foot_on(contacts: dict[str, set[str]], kind: str, foot: str) -> bool:
+        return set(contacts) == {foot} and contacts.get(foot) == {kind}
+
+    def _jump_contact_illegal(self, contacts: dict[str, set[str]], allowed: str) -> bool:
+        """Reject wrong surfaces and any non-foot course contact after take-off."""
+        if contacts and not self._only_surface(contacts, allowed):
+            return True
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            for course_gid, robot_gid in ((int(contact.geom1), int(contact.geom2)),
+                                          (int(contact.geom2), int(contact.geom1))):
+                kind = self._surface_kind_by_geom.get(course_gid)
+                if kind is None:
+                    continue
+                body = int(self.model.geom_bodyid[robot_gid])
+                if body not in self._foot_bodies:
+                    return True
+        return False
 
     def _hits(self, kind: str) -> bool:
         gid = self._obstacle_geom_ids.get(kind)

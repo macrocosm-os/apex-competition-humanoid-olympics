@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from typing import Mapping
 
+from .course import (HIGH_JUMP_BARS_M, LONG_LANDING_M, LONG_TAKEOFF_M, TRIPLE_LANDING_M,
+                     TRIPLE_TAKEOFF_M)
 
 RACE_EVENTS = frozenset({"sprint_100", "sprint_400", "hurdles_100"})
 JUMP_EVENTS = frozenset({"long_jump", "triple_jump"})
@@ -14,7 +16,7 @@ def instance_score(event: str, terminal_reason: str, progress: float, steps: int
                    metrics: Mapping[str, float] | None = None) -> float:
     """Return one event result in ``[0, 1]``."""
     metrics = metrics or {}
-    if terminal_reason in {"physics_glitch", "invalid_action", "player_error",
+    if terminal_reason in {"physics_glitch", "invalid_action", "jump_foul", "player_error",
                            "submission_not_ready", "out_of_bounds"}:
         return 0.0
 
@@ -29,15 +31,18 @@ def instance_score(event: str, terminal_reason: str, progress: float, steps: int
         target = max(float(metrics.get("bar_height_m", 0.95)), 1e-6)
         clearance = max(0.0, float(metrics.get("best_clearance_m", 0.0)))
         if terminal_reason == "cleared":
-            normalized_height = min(max((target - 0.65) / 0.65, 0.0), 1.0)
+            normalized_height = min(max((target - HIGH_JUMP_BARS_M[0]) /
+                                        (HIGH_JUMP_BARS_M[-1] - HIGH_JUMP_BARS_M[0]), 0.0), 1.0)
             return 0.25 + 0.75 * normalized_height
         return 0.24 * min(clearance / target, 1.0)
 
     if event in JUMP_EVENTS:
         distance = max(0.0, float(metrics.get("jump_distance_m", 0.0)))
-        minimum = 4.0 if event == "long_jump" else 4.5
+        minimum = (LONG_LANDING_M - LONG_TAKEOFF_M if event == "long_jump"
+                   else TRIPLE_LANDING_M - TRIPLE_TAKEOFF_M)
+        target = 12.0 if event == "long_jump" else 18.0
         if terminal_reason == "landed":
-            return 0.25 + 0.75 * min(max((distance - minimum) / (9.0 - minimum), 0.0), 1.0)
+            return 0.25 + 0.75 * min(max((distance - minimum) / (target - minimum), 0.0), 1.0)
         return 0.20 * min(max(float(progress), 0.0), 1.0)
 
     raise ValueError(f"unknown Olympic event {event!r}")
