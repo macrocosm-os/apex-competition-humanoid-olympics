@@ -66,14 +66,17 @@ dominate five shorter disciplines. Incomplete attempts stay below 0.25 and valid
 from 0.25 upward; quality within finished races is pace, high jump is selected bar height, and
 horizontal jumps are legal distance.
 
-Round conditions are derived deterministically from one seed. Within each event the friction and
-wind samples use a shifted lattice with opposing wind directions, reducing evaluation variance
-without freezing a known suite. High-jump attempts cycle through 1.00, 1.10, 1.20, and 1.30 m
-bar heights above the deck.
+Each launch round repeats the same public four-stratum friction/wind lattice, with opposing wind
+directions. This makes the absolute score stable enough for a 1% takeover margin while still
+requiring a controller to handle the full launch envelope. High-jump attempts cycle through 1.00,
+1.10, 1.20, and 1.30 m bar heights above the deck. The platform seed is retained in the request
+contract but is intentionally score-neutral in v0.1; a future version can introduce fresh
+conditions only after recalibrating its baseline.
 
-The launch configuration is fixed across rounds: four attempts per event, 8 m/s maximum wind,
-500 ms action deadline, and history stride 2. Only the master seed changes; accepting a different
-event count or wind range would change the score distribution and is a future versioned release.
+The launch configuration is fixed across rounds: four attempts per event, four public condition
+strata, 8 m/s maximum wind, 500 ms action deadline, and history stride 2. Accepting a different
+event count, wind range, or seed-dependent condition mix would change the score distribution and
+is a future versioned release.
 
 The geometry and height band are implementation hypotheses until calibrated. Before the first
 release, run a solvability probe for high and triple jump, measure full-round standard deviation

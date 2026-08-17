@@ -5,8 +5,9 @@
 # be unusable (a 24-instance suite did not finish in 15 hours). And a host-side measurement is not
 # a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
 #
-# Friction and wind are drawn from the round seed, so raw_score is a random variable over seeds.
-# It measures 20 fixed-shape full meets for the baseline and two deliberately weaker references.
+# v0.1 repeats its four balanced condition strata across round seeds. The 20-seed check confirms
+# that the fixed absolute score remains stable in the actual runtime, alongside two deliberately
+# weaker references.
 # The resulting mean, variance, ordering, resource, and wall-time evidence is recorded in HANDOFF.
 name: measure-baseline
 

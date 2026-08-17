@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from env import OlympicsSim, instance_score, instance_spec
+from env import OlympicsSim, event_instances, instance_score, instance_spec
 from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHTS_M, LONG_LANDING_M, LONG_TAKEOFF_M,
                         TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRIPLE_LANDING_M,
                         TRIPLE_TAKEOFF_M, build_event)
@@ -42,6 +42,13 @@ board = next(s for s in long_layout.surfaces if s.kind == "takeoff_board")
 assert math.isclose(board.x - board.hx, LONG_TAKEOFF_M - TAKEOFF_BOARD_BEFORE_M)
 assert math.isclose(board.x + board.hx, LONG_TAKEOFF_M + TAKEOFF_BOARD_AFTER_M)
 assert 'contype="0" conaffinity="0"' in _scene_xml(long_layout)
+
+# v0.1 deliberately loops one balanced public meet.  This makes an absolute
+# baseline comparable across rounds rather than moving it with private seed draws.
+assert event_instances(4, 1) == event_instances(4, 20)
+for event in ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump"):
+    for attempt in range(4):
+        assert instance_spec(event, attempt, seed=1) == instance_spec(event, attempt, seed=20)
 
 # Only a foot contact on a walkable surface's top, inside its footprint, can
 # become support. A vertical side scrape and an edge contact cannot unlock a phase.

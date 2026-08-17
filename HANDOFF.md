@@ -54,7 +54,7 @@ Score-affecting pins already committed:
 | Parameter | Proposal | Reason |
 |---|---|---|
 | Process / kind | CPU / solo | A single 15 MB ONNX policy and deterministic MuJoCo physics fit CPU; score is absolute. |
-| Round length / reveal | 2 days / 5 days | Fresh seeds rotate regularly while trained-control breakthroughs retain meaningful IP. |
+| Round length / reveal | 2 days / 5 days | The fixed v0.1 meet can loop while trained-control breakthroughs retain meaningful IP. |
 | Score direction | higher is better | Legal speed, height, and distance are monotone athletic improvements. |
 | Launch meet | 4 attempts × 6 events; 40,000 maximum actions | Fixed shape makes cross-round scores comparable while sampling four condition strata. |
 | Resources | 2 CPU, 1.5 GiB, 0 GPU | The compiled G1 scene is referee-owned; this is the stage ceiling and is exercised in release CI. |
@@ -67,7 +67,7 @@ Score-affecting pins already committed:
 ## 4. Evaluation sizing
 
 The fixed launch unit is 24 attempts: four deterministic condition strata for each of six
-equal-weight events. The candidate workflow runs the baseline, a stationary valid ONNX reference,
+equal-weight events, repeated identically for every round seed. The candidate workflow runs the baseline, a stationary valid ONNX reference,
 and an independently seeded untrained ONNX reference across 20 master seeds in the actual
 two-container native-amd64 setup. It records per-seed raw/event scores, standard deviation,
 ordering, peak container memory, and wall time in `baseline-calibration-native-amd64`.
@@ -89,9 +89,9 @@ attempt count is revised in a new spec version instead.
    identifier/index, reset seed `0`, and the fixed 500 ms deadline. Observations describe current
    robot/course state only. It receives no platform seed, future conditions, referee filesystem,
    or other submission.
-2. **Seed leverage.** The round seed remains referee/platform-side. It generates only that
-   round's public-geometry wind/friction conditions; it cannot generate another round's seed or
-   future query stream in the player sandbox.
+2. **Seed leverage.** The platform round seed remains referee-side but is intentionally
+   score-neutral for v0.1. Every round repeats the same public, balanced condition suite, so no
+   seed can select an easier meet or move the absolute baseline.
 3. **Degenerate submissions.** Static and seeded-untrained ONNX references are measured in the
    candidate suite. Malformed/NaN/wrong-shape responses receive typed invalid outcomes; boundary,
    invalid-contact, and player faults contribute zero.
@@ -106,8 +106,8 @@ attempt count is revised in a new spec version instead.
 6. **Copy-plus-epsilon.** The five-day reveal delay is longer than the two-day round. Within a
    round, fixed seed/config means a trivial copy reproduces its score rather than gaining 1%.
 7. **Cross-round leakage.** Per-attempt histories are released only after the round and show
-   already-observed public physics. Future seeds differ; there is no hidden answer corpus or
-   reusable held-out item to memorize.
+   already-observed public physics. The v0.1 meet repeats by design; there is no hidden answer
+   corpus, unrevealed condition stream, or other submission to leak.
 8. **Error-message hygiene.** Miner-facing outcomes are stable categories such as invalid action,
    player error, hurdle hit, jump foul, or timeout. They contain no stack trace, host path,
    internal seed, secret threshold, or future task information.

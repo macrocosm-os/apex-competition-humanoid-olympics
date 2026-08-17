@@ -35,9 +35,10 @@ an incomplete attempt remains below 0.25. Faster legal race finishes, higher cle
 longer valid horizontal jumps earn more. Limited progress credit remains useful for local training
 without outweighing a complete attempt.
 
-The v0.1 launch configuration is fixed: four attempts of every event, 8 m/s maximum wind,
-500 ms per action, and a replay history recorded at stride 2. The round seed is the only
-score-affecting input that changes between rounds.
+The v0.1 launch configuration is fixed: four attempts of every event, the same four balanced
+wind/friction strata, 8 m/s maximum wind, 500 ms per action, and a replay history recorded at
+stride 2. The platform seed is intentionally score-neutral at launch, so the meet can loop with
+a stable absolute baseline while the control frontier develops.
 
 The round result is:
 
@@ -46,8 +47,8 @@ raw_score = mean(event_mean[100m, 400m, hurdles, high jump, long jump, triple ju
 ```
 
 The referee records every event attempt in `result.json` metadata and writes a replayable history
-file for it. Conditions are generated from the round seed and held fixed for all submissions in
-that round.
+file for it. The same balanced conditions repeat for every launch round and are held fixed for all
+submissions.
 
 ## Policy interface
 

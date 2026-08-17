@@ -1,8 +1,9 @@
 """Public geometry for the six legs-only Humanoid Olympics events.
 
 Every event is short enough to be an individual control problem, rather than a
-general obstacle course. Conditions (friction, wind, and high-jump bar) vary
-from the round seed in :mod:`env.sim`; the event geometry itself is public.
+general obstacle course. Conditions (friction, wind, and high-jump bar) are a
+fixed public four-stratum launch suite in :mod:`env.sim`; the event geometry
+itself is public.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "humanoid_olympics round input",
-  "description": "A balanced six-event Humanoid Olympics meet. Every evaluation contains the same number of attempts of each discipline; friction and wind derive deterministically from the private round seed.",
+  "description": "A balanced six-event Humanoid Olympics meet. Every evaluation contains the same number of attempts of each discipline and the same public, balanced launch conditions.",
   "type": "object",
   "additionalProperties": false,
   "required": ["seed", "instances_per_event", "deadline_ms"],
@@ -9,7 +9,7 @@
     "seed": {
       "type": "integer",
       "minimum": 0,
-      "description": "Fresh master seed for this round's hidden surface and wind conditions."
+      "description": "Platform round identifier. It is score-neutral in the fixed v0.1 launch meet."
     },
     "instances_per_event": {
       "type": "integer",
