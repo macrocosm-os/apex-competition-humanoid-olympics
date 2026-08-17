@@ -119,6 +119,5 @@ tools/     local evaluation, policy export, rendering, and replay
 docs/      design and calibration notes
 ```
 
-Before release, the baseline must be remeasured over at least 20 round seeds on native amd64
-hardware, and the released player/referee image digests must replace the temporary values in
-`spec.yaml`.
+The native-amd64 20-seed baseline calibration is recorded in `HANDOFF.md`. Before onboarding, the
+signed player/referee image digests must replace the temporary values in `spec.yaml`.

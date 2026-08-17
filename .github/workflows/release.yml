@@ -172,9 +172,9 @@ jobs:
           trap 'docker rm -f olympics-player-ci >/dev/null 2>&1 || true; docker network rm olympics-ci-net >/dev/null 2>&1 || true' EXIT
           mkdir -p /tmp/olympics-ci-data && chmod 777 /tmp/olympics-ci-data
           docker run -d --rm --name olympics-player-ci --network olympics-ci-net \
-            --cpus 2 --memory 1536m \
+            --cpus 2 --memory 2048m \
             -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" olympics-player-ci
-          docker run --rm --network olympics-ci-net --cpus 2 --memory 1536m \
+          docker run --rm --network olympics-ci-net --cpus 2 --memory 2048m \
             -v /tmp/olympics-ci-data:/data \
             -e MATCH_ID=ci-full -e SEED=1 -e NUM_PLAYERS=1 \
             -e PLAYER_URLS=http://olympics-player-ci:8000 \

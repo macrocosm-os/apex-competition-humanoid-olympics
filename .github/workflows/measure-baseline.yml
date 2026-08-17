@@ -67,13 +67,13 @@ jobs:
             artifact="$2"
             player="olympics-player-$label"
             mkdir -p "data/results/$label"
-            docker run -d --name "$player" --network olympics-net --cpus 2 --memory 1536m \
+            docker run -d --name "$player" --network olympics-net --cpus 2 --memory 2048m \
               -v "$artifact:/app/submission.onnx:ro" olympics-player >/dev/null
             for offset in $(seq 0 $((seed_count - 1))); do
               seed=$((seed_start + offset))
               name="olympics-referee-$label-$seed"
               rm -f data/result.json
-              docker run -d --name "$name" --network olympics-net --cpus 2 --memory 1536m \
+              docker run -d --name "$name" --network olympics-net --cpus 2 --memory 2048m \
                 -v "$PWD/data:/data" -e MATCH_ID="measure-$label-$seed" -e SEED="$seed" \
                 -e NUM_PLAYERS=1 -e PLAYER_URLS="http://$player:8000" \
                 -e CONFIG_JSON="{\"seed\":$seed,\"instances_per_event\":4,\"deadline_ms\":500,\"wind_max_ms\":8,\"record_history\":true,\"history_stride\":2}" \
@@ -123,7 +123,7 @@ jobs:
                                                               key=lambda item: item[1], reverse=True)]
           memory = []
           for line in pathlib.Path('data/docker-memory.txt').read_text().splitlines():
-              match = re.search(r' (\\d+(?:\\.\\d+)?)([KMG]iB) /', line)
+              match = re.search(r' (\d+(?:\.\d+)?)([KMG]iB) /', line)
               if match:
                   value, unit = float(match.group(1)), match.group(2)
                   memory.append(value * {'KiB': 1 / 1024, 'MiB': 1, 'GiB': 1024}[unit])

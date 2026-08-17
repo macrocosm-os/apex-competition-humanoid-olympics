@@ -18,7 +18,7 @@ after the signed candidate workflow finishes. It is not an onboarding request by
   event score carried by invalid contacts, boundary violations, or typed player faults.
 - The 400 m diagnostic shows forward lap progress while inside the lane; jump diagnostics show
   legal board take-off, required flight phases, and foot-top landing contacts.
-- Top policies fit the CPU/1.5 GiB budget and answer within the fixed 500 ms action deadline.
+- Top policies fit the CPU/2 GiB budget and answer within the fixed 500 ms action deadline.
 - After every round reveal, inspect top-event histories plus event-score distributions on fresh
   seeds. Watch for score spikes concentrated in one event, contact-foul patterns, long evaluator
   times, or policies that rank well without exhibiting the stated athletic behaviours.
@@ -35,9 +35,9 @@ after the signed candidate workflow finishes. It is not an onboarding request by
 | Round generation | n/a; one platform master seed is sufficient | complete |
 | Cosign identity + issuer | `.github/workflows/release.yml`; GitHub Actions OIDC | candidate workflow verifies it |
 | Input schema + fixture | `input.schema.json`, `fixtures/input.json` | complete |
-| Baseline integration artifact | `baseline/baseline.onnx` | pinned; full native-amd64 evidence pending |
+| Baseline integration artifact | `baseline/baseline.onnx` | pinned; native-amd64 20-seed calibration passed (run `32037213638`, artifact `9291517227`) |
 | Miner documentation | `README.md`, `docs/design.md` | complete |
-| Full end-to-end evidence | release CI two-container job + candidate calibration artifact | candidate workflow pending |
+| Full end-to-end evidence | release CI two-container job + candidate calibration artifact | local constrained loop passed; signed candidate CI pending |
 
 Score-affecting pins already committed:
 
@@ -57,10 +57,10 @@ Score-affecting pins already committed:
 | Round length / reveal | 2 days / 5 days | The fixed v0.1 meet can loop while trained-control breakthroughs retain meaningful IP. |
 | Score direction | higher is better | Legal speed, height, and distance are monotone athletic improvements. |
 | Launch meet | 4 attempts × 6 events; 40,000 maximum actions | Fixed shape makes cross-round scores comparable while sampling four condition strata. |
-| Resources | 2 CPU, 1.5 GiB, 0 GPU | The compiled G1 scene is referee-owned; this is the stage ceiling and is exercised in release CI. |
+| Resources | 2 CPU, 2 GiB, 0 GPU | Native evidence peaked at 927.8 MiB, leaving >50% headroom; this ceiling is exercised in release CI. |
 | Timeouts | player 1,200 s; referee 900 s; internal scheduler 840 s | Leaves persistence time after a full recorded 24-attempt meet. |
 | Action deadline | 500 ms | Caps inference latency while remaining realistic for compact recurrent CPU ONNX. |
-| Baseline score | pending native-amd64 20-seed mean and stability gate | Measured before the final tag; never guessed. |
+| Baseline score | 0.032985375 native-amd64 mean | Passed the 20-seed stability gate before the candidate tag. |
 | Submission fee | propose USD 1 in TAO | Discourages low-effort repetition and approximately covers simulator cost. |
 | Incentive weight | propose 0.03 | Middle of the normal 0.02–0.05 range, subject to Macrocosmos. |
 
@@ -74,11 +74,12 @@ ordering, peak container memory, and wall time in `baseline-calibration-native-a
 
 Before onboarding, fill this section from that artifact:
 
-- Baseline mean raw score: pending.
-- Baseline sample standard deviation across 20 seeds: pending.
-- 1% takeover margin / quarter-margin check: pending (`σ_round <= 0.0025 × typical score`).
-- Baseline ordering above both deliberately weaker references on every seed: pending.
-- Mean / worst full recorded wall time and peak memory: pending.
+- Evidence: [native calibration run 32037213638](https://github.com/macrocosm-os/apex-competition-humanoid-olympics/actions/runs/32037213638), artifact `baseline-calibration-native-amd64` (`9291517227`).
+- Baseline mean raw score: `0.032985375`; all 20 raw scores were exactly that value.
+- Baseline sample standard deviation across 20 seeds: `0.0`; quarter-margin `0.0000824634375`; stability gate passed.
+- Event means: 100 m `0.040466`, 400 m `0.004020`, hurdles `0.032187`, high `0`, long `0.121240`, triple `0`.
+- Baseline ranked above both deliberately weaker references on every seed: baseline `0.032985375`, static `0.002628292`, random `0.002610667`.
+- Full recorded baseline wall time: mean `65.705 s`, max `66.2 s`; peak measured container memory `927.8 MiB`, below half of the declared 2 GiB envelope.
 
 If the variance check fails, the fixed launch configuration is not submitted; its condition mix or
 attempt count is revised in a new spec version instead.
@@ -127,7 +128,7 @@ attempt count is revised in a new spec version instead.
 ## 6. GPU justification
 
 Not applicable. Both policy inference and referee physics are CPU-only; the candidate workflow
-verifies them under the declared 2 CPU / 1.5 GiB limit.
+verifies them under the declared 2 CPU / 2 GiB limit.
 
 ## 7. Candidate-to-onboarding procedure
 
