@@ -19,13 +19,15 @@ tensors. `--check` asserts the rebuild is numerically identical to the original.
 
     python tools/make_baseline.py --urlg <unitree_rl_gym checkout>
 
-Needs torch. See tools/preview_v3.py for the sparse-checkout command.
+Needs torch and the pinned Unitree checkout described in ``baseline/PROVENANCE.md``.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import pathlib
+import subprocess
 
 import torch
 from torch import nn
@@ -38,6 +40,8 @@ I_GRAV, I_ANGVEL, I_QPOS, I_QVEL, I_ACT, I_PHASE, I_YAW, I_Y = 0, 3, 9, 21, 33, 
 CMD_SCALE = torch.tensor([2.0, 2.0, 0.25])
 FORWARD_SPEED = 0.8
 H = 64  # motion.pt LSTM width
+UNITREE_RL_GYM_REVISION = "276801e46c5d433564f24658bac64f254b7d2d4b"
+MOTION_SHA256 = "cf668f75b90d1abf73d2b87612a6e76bccc61ff7e083b63582d3f6aaa3c1759d"
 
 
 class BaselinePolicy(nn.Module):
@@ -119,7 +123,15 @@ def _u_of(policy: BaselinePolicy, obs: torch.Tensor) -> torch.Tensor:
 
 
 def build(urlg: pathlib.Path, out: pathlib.Path) -> None:
-    src = torch.jit.load(str(urlg / "deploy/pre_train/g1/motion.pt")).eval()
+    motion = urlg / "deploy/pre_train/g1/motion.pt"
+    got_hash = hashlib.sha256(motion.read_bytes()).hexdigest()
+    if got_hash != MOTION_SHA256:
+        raise ValueError(f"motion.pt hash mismatch: expected {MOTION_SHA256}, got {got_hash}")
+    revision = subprocess.run(["git", "-C", str(urlg), "rev-parse", "HEAD"],
+                              capture_output=True, check=False, text=True).stdout.strip()
+    if revision != UNITREE_RL_GYM_REVISION:
+        raise ValueError(f"unitree_rl_gym revision mismatch: expected {UNITREE_RL_GYM_REVISION}, got {revision}")
+    src = torch.jit.load(str(motion)).eval()
     policy = BaselinePolicy(src).eval()
 
     worst = check(src, policy)

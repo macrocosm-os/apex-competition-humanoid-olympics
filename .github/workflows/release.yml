@@ -163,6 +163,37 @@ jobs:
           PYTHONPATH=.:referee:player SUBMISSION_PATH=baseline/baseline.onnx \
             python .github/scripts/check_referee_artifacts.py
 
+      - name: Full two-container meet fits the declared sandbox limits
+        run: |
+          set -euo pipefail
+          docker build -q -f referee/Dockerfile -t olympics-referee-ci .
+          docker build -q -f player/Dockerfile -t olympics-player-ci .
+          docker network create olympics-ci-net
+          trap 'docker rm -f olympics-player-ci >/dev/null 2>&1 || true; docker network rm olympics-ci-net >/dev/null 2>&1 || true' EXIT
+          mkdir -p /tmp/olympics-ci-data && chmod 777 /tmp/olympics-ci-data
+          docker run -d --rm --name olympics-player-ci --network olympics-ci-net \
+            --cpus 2 --memory 1536m \
+            -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" olympics-player-ci
+          docker run --rm --network olympics-ci-net --cpus 2 --memory 1536m \
+            -v /tmp/olympics-ci-data:/data \
+            -e MATCH_ID=ci-full -e SEED=1 -e NUM_PLAYERS=1 \
+            -e PLAYER_URLS=http://olympics-player-ci:8000 \
+            -e CONFIG_JSON='{"seed":1,"instances_per_event":4,"deadline_ms":500,"wind_max_ms":8,"record_history":true,"history_stride":2}' \
+            olympics-referee-ci
+          python - <<'PY'
+          import json
+          r = json.load(open('/tmp/olympics-ci-data/result.json'))
+          m = r['metadata']
+          bad = {'player_error', 'invalid_action', 'submission_not_ready', 'round_timeout'}
+          reasons = {row['terminal_reason'] for row in m['tasks']}
+          assert len(m['tasks']) == 24, m
+          assert m['history_files'] == 24, m
+          assert r['raw_scores'][0] > 0, r
+          assert not (reasons & bad), reasons
+          assert m['eval_time_in_seconds'] < 840, m
+          print('ok: full constrained two-container meet', r['raw_scores'][0], m['eval_time_in_seconds'])
+          PY
+
   images:
     needs: [preflight, smoke-test]
     # Only tags produce pushed, signed images. A workflow_dispatch run on a branch would
@@ -194,6 +225,12 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - name: Sign (keyless)
         run: cosign sign --yes "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
+      - name: Verify the release signature against the declared identity
+        run: |
+          cosign verify \
+            --certificate-identity-regexp '^https://github\.com/macrocosm-os/apex-competition-humanoid-olympics/\.github/workflows/release\.yml@refs/tags/.*$' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ steps.build.outputs.image }}@${{ steps.build.outputs.digest }}"
       # The platform pins by digest and rejects tags, so a released spec whose digests are
       # zeros (or stale) cannot sync. Say so loudly in the summary rather than let a maintainer
       # discover it at sync time.
@@ -213,3 +250,11 @@ jobs:
             echo "::warning::spec.yaml does not pin the ${{ matrix.name }} digest just built ($DIGEST). Commit it before requesting onboarding."
             echo "> :warning: **spec.yaml does not pin this digest yet** — commit it before requesting onboarding." >> "$GITHUB_STEP_SUMMARY"
           fi
+          printf '{\n  "name": "%s",\n  "image": "%s",\n  "digest": "%s"\n}\n' \
+            '${{ matrix.name }}' '${{ steps.build.outputs.image }}' "$DIGEST" > /tmp/release-image.json
+      - name: Preserve the immutable image reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-image-${{ matrix.name }}
+          path: /tmp/release-image.json
+          if-no-files-found: error

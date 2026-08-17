@@ -13,35 +13,33 @@
     },
     "instances_per_event": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 4,
+      "const": 4,
       "default": 4,
-      "description": "Attempts of each of the six disciplines. Four yields a 24-attempt meet."
+      "description": "Four attempts of each of the six disciplines: the fixed 24-attempt launch meet."
     },
     "deadline_ms": {
       "type": "integer",
-      "minimum": 50,
-      "maximum": 5000,
-      "description": "Per-action HTTP deadline for the policy."
+      "const": 500,
+      "default": 500,
+      "description": "Fixed per-action HTTP deadline for the launch version."
     },
     "wind_max_ms": {
       "type": "number",
-      "minimum": 0,
-      "maximum": 12,
+      "const": 8,
       "default": 8,
-      "description": "Upper bound for round-derived ground-level wind speed in m/s."
+      "description": "Fixed maximum round-derived ground-level wind speed in m/s."
     },
     "record_history": {
       "type": "boolean",
+      "const": true,
       "default": true,
-      "description": "Write one replayable history file per event attempt."
+      "description": "The fixed launch meet records replayable history for all 24 attempts."
     },
     "history_stride": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 50,
+      "const": 2,
       "default": 2,
-      "description": "Keep every Nth 50 Hz control frame in each history file."
+      "description": "The fixed launch history keeps every second 50 Hz control frame."
     }
   }
 }

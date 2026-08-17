@@ -16,8 +16,8 @@ def instance_score(event: str, terminal_reason: str, progress: float, steps: int
                    metrics: Mapping[str, float] | None = None) -> float:
     """Return one event result in ``[0, 1]``."""
     metrics = metrics or {}
-    if terminal_reason in {"physics_glitch", "invalid_action", "jump_foul", "player_error",
-                           "submission_not_ready", "out_of_bounds"}:
+    if terminal_reason in {"physics_glitch", "high_foul", "invalid_action", "jump_foul",
+                           "player_error", "submission_not_ready", "out_of_bounds"}:
         return 0.0
 
     if event in RACE_EVENTS:

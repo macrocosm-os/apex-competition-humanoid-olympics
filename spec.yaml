@@ -47,7 +47,7 @@ entrypoints:
     command: ["python", "/app/launch.py", "--port", "8000"]
     network_disabled: false
     allow_internet: false
-    # A four-attempt meet has at most 63,600 control calls. The referee's
+    # A four-attempt meet has at most 40,000 control calls. The referee's
     # internal 840-second budget leaves time to persist a result.
     timeout_s: 1200
     http_api:

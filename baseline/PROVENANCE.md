@@ -1,21 +1,38 @@
-# Baseline status
+# baseline.onnx provenance
 
-`baseline.onnx` is the inherited Unitree G1 flat-ground walker, wrapped to the unchanged
-104-observation / 256-state / 12-action ONNX interface. It remains a useful integration policy:
-the course-relative heading and cross-track fields occupy the same positions that its wrapper
-already consumes, so it can make a real attempt at straight and curved running.
+`baseline.onnx` is a reproducible integration policy, not an Olympics-trained contender. It must
+score above zero through the actual player/referee loop, but it is deliberately not a leaderboard
+bar until the native-amd64 calibration evidence in `HANDOFF.md` is accepted at onboarding.
 
-It is not an Olympics-trained policy. It has no terrain training and no jumping controller, so it
-should not be interpreted as an event baseline or as the source of a production leaderboard bar.
+## Immutable inputs
 
-Before release:
+- Unitree source: `https://github.com/unitreerobotics/unitree_rl_gym` at
+  `276801e46c5d433564f24658bac64f254b7d2d4b` (BSD-3).
+- Source policy: `deploy/pre_train/g1/motion.pt`, SHA-256
+  `cf668f75b90d1abf73d2b87612a6e76bccc61ff7e083b63582d3f6aaa3c1759d`.
+- Submitted integration artifact: `baseline/baseline.onnx`, SHA-256
+  `1d0a88ef2edcd13f9ad0401cc72faaea664951ec0763429ad31bbc907e2954f2`.
+- Export equivalence: `tools/make_baseline.py` checks 64 recurrent observations against the
+  TorchScript policy. Rebuilding from the pinned revision reproduces the checked-in ONNX byte for
+  byte and reports a maximum action difference of `0.0e+00`.
 
-1. Run it through the complete 24-attempt meet inside the native-amd64 referee image over at
-   least 20 round seeds.
-2. Record event-level means, round standard deviation, resource peak, and worst-case wall time.
-3. Replace this note with the measured figure and keep `spec.defaults.baseline_raw_score` at zero
-   unless the platform review establishes a stable non-zero entry bar.
+The wrapper preserves the public `[104] + [256] -> [12] + [256]` contract. It maps the stock
+47-value Unitree locomotion input from the Olympics observation, supplies a body-frame forward
+command, and keeps its LSTM state in `state_in`/`state_out`. It sees no obstacle or jump terrain.
 
-The source architecture and exporter remain in `tools/make_baseline.py`. Its route inputs now
-describe the local event tangent, so the same policy interface is reusable while a stronger
-Olympics-specific reference is trained.
+## Rebuild
+
+```bash
+git clone --filter=blob:none --sparse https://github.com/unitreerobotics/unitree_rl_gym
+cd unitree_rl_gym
+git checkout 276801e46c5d433564f24658bac64f254b7d2d4b
+git sparse-checkout set deploy/pre_train/g1
+cd ..
+python tools/make_baseline.py --urlg unitree_rl_gym --out baseline/baseline.onnx
+sha256sum baseline/baseline.onnx
+```
+
+The exporter rejects any checkout or `motion.pt` whose pinned SHA does not match. Native-amd64
+full-meet scores, variance, peak memory, and worst wall time are produced by
+`.github/workflows/measure-baseline.yml` and are recorded in the onboarding handoff after its
+candidate-release run.

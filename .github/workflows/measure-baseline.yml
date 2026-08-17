@@ -6,24 +6,24 @@
 # a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
 #
 # Friction and wind are drawn from the round seed, so raw_score is a random variable over seeds.
-# This measures one balanced meet; run it across several seeds to see the spread.
-#
-# It does NOT feed `spec.yaml defaults.baseline_raw_score`, which is deliberately 0.0 — that field
-# is the platform's entry bar, not a description of the baseline, and pinning it to a measured
-# mean risks stalling the competition on measurement noise (see the `defaults` block in spec.yaml).
-# What this workflow is for: judging submissions by eye against a known reference and measuring
-# round variance. Record platform-review results in the private onboarding handoff.
+# It measures 20 fixed-shape full meets for the baseline and two deliberately weaker references.
+# The resulting mean, variance, ordering, resource, and wall-time evidence is recorded in HANDOFF.
 name: measure-baseline
 
 on:
+  push:
+    tags: ["calibration-*"]
   workflow_dispatch:
     inputs:
       instances_per_event:
         description: "Attempts of each Olympic discipline"
         default: "4"
-      seed:
-        description: "Round seed: sets every instance's friction and wind"
+      seed_start:
+        description: "First round seed; each following integer defines one fresh round"
         default: "1"
+      seed_count:
+        description: "Number of independent full meets to measure"
+        default: "20"
 
 permissions:
   contents: read
@@ -31,6 +31,7 @@ permissions:
 jobs:
   measure:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 
@@ -39,43 +40,131 @@ jobs:
           docker build -q -f referee/Dockerfile -t olympics-referee .
           docker build -q -f player/Dockerfile  -t olympics-player  .
 
-      - name: Run the baseline through the full loop
+      - name: Make two materially different conforming reference policies
         run: |
+          python -m pip install --quiet onnxruntime==1.28.0 numpy==2.3.4 mujoco==3.11.0 onnx \
+            torch --extra-index-url https://download.pytorch.org/whl/cpu
+          PYTHONPATH=. python tools/make_test_policy.py --zero --out /tmp/reference-static.onnx
+          PYTHONPATH=. python tools/make_test_policy.py --seed 1176 --out /tmp/reference-random.onnx
+
+      - name: Run 20 full meets for every reference and record resource use
+        run: |
+          set -euo pipefail
+          seed_start='${{ inputs.seed_start || 1 }}'
+          seed_count='${{ inputs.seed_count || 20 }}'
+          instances_per_event='${{ inputs.instances_per_event || 4 }}'
+          test "$seed_count" -ge 20
+          test "$instances_per_event" -eq 4
           docker network create olympics-net
-          docker run -d --name olympics-player --network olympics-net \
-            -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" olympics-player
-          # The referee runs as uid 1000 and writes result.json into this bind mount; on Linux
-          # the runner user owns it, so it needs to be world-writable. macOS Docker Desktop
-          # masks this, which is how it was missed the first time.
-          mkdir -p "$PWD/data" && chmod 777 "$PWD/data"
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:8000/health >/dev/null 2>&1 && break || sleep 2
-          done
-          docker run --rm --network olympics-net -v "$PWD/data:/data" \
-            -e MATCH_ID=measure -e SEED=${{ inputs.seed }} -e NUM_PLAYERS=1 -e PLAYER_URLS=http://olympics-player:8000 \
-            -e CONFIG_JSON="{\"seed\":${{ inputs.seed }},\"instances_per_event\":${{ inputs.instances_per_event }},\"deadline_ms\":500}" \
-            olympics-referee
+          trap 'docker ps -aq --filter "name=^olympics-" | xargs -r docker rm -f >/dev/null 2>&1 || true; docker network rm olympics-net >/dev/null 2>&1 || true' EXIT
+          # The referee runs as uid 1000 and writes result.json into this bind mount, hence
+          # the intentionally world-writable directory on the Linux runner.
+          mkdir -p "$PWD/data/results" && chmod 777 "$PWD/data" "$PWD/data/results"
+          : > data/docker-memory.txt
+          run_suite() {
+            label="$1"
+            artifact="$2"
+            player="olympics-player-$label"
+            mkdir -p "data/results/$label"
+            docker run -d --name "$player" --network olympics-net --cpus 2 --memory 1536m \
+              -v "$artifact:/app/submission.onnx:ro" olympics-player >/dev/null
+            for offset in $(seq 0 $((seed_count - 1))); do
+              seed=$((seed_start + offset))
+              name="olympics-referee-$label-$seed"
+              rm -f data/result.json
+              docker run -d --name "$name" --network olympics-net --cpus 2 --memory 1536m \
+                -v "$PWD/data:/data" -e MATCH_ID="measure-$label-$seed" -e SEED="$seed" \
+                -e NUM_PLAYERS=1 -e PLAYER_URLS="http://$player:8000" \
+                -e CONFIG_JSON="{\"seed\":$seed,\"instances_per_event\":4,\"deadline_ms\":500,\"wind_max_ms\":8,\"record_history\":true,\"history_stride\":2}" \
+                olympics-referee >/dev/null
+              while [ "$(docker inspect -f '{{.State.Running}}' "$name")" = true ]; do
+                docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' "$player" "$name" \
+                  >> data/docker-memory.txt || true
+                sleep 1
+              done
+              rc=$(docker wait "$name")
+              docker logs "$name"
+              docker rm "$name" >/dev/null
+              test "$rc" -eq 0
+              mv data/result.json "data/results/$label/seed-$seed.json"
+            done
+            docker rm -f "$player" >/dev/null
+          }
+          run_suite baseline "$PWD/baseline/baseline.onnx"
+          run_suite static /tmp/reference-static.onnx
+          run_suite random /tmp/reference-random.onnx
 
       - name: Report
         run: |
           python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
-          import json
-          r = json.load(open('data/result.json'))
-          m = r['metadata']
-          print('### baseline on native amd64, seed ${{ inputs.seed }}\n')
+          import json, math, pathlib, re, statistics
+
+          policies = {}
+          for label in ('baseline', 'static', 'random'):
+              records = [json.loads(path.read_text())
+                         for path in sorted((pathlib.Path('data/results') / label).glob('seed-*.json'))]
+              assert len(records) >= 20, f'{label}: expected >=20 runs, got {len(records)}'
+              policies[label] = records
+          baseline = policies['baseline']
+          scores = [float(record['raw_scores'][0]) for record in baseline]
+          assert min(scores) > 0, scores
+          means = {event: statistics.fmean(record['metadata']['event_scores'][event] for record in baseline)
+                   for event in baseline[0]['metadata']['event_scores']}
+          stdev = statistics.stdev(scores)
+          mean = statistics.fmean(scores)
+          times = [float(record['metadata']['eval_time_in_seconds']) for record in baseline]
+          reference_scores = {
+              label: [float(record['raw_scores'][0]) for record in records]
+              for label, records in policies.items()
+          }
+          reference_means = {label: statistics.fmean(values) for label, values in reference_scores.items()}
+          reference_ordering = [label for label, _ in sorted(reference_means.items(),
+                                                              key=lambda item: item[1], reverse=True)]
+          memory = []
+          for line in pathlib.Path('data/docker-memory.txt').read_text().splitlines():
+              match = re.search(r' (\\d+(?:\\.\\d+)?)([KMG]iB) /', line)
+              if match:
+                  value, unit = float(match.group(1)), match.group(2)
+                  memory.append(value * {'KiB': 1 / 1024, 'MiB': 1, 'GiB': 1024}[unit])
+          report = {
+              'architecture': 'native amd64 GitHub ubuntu-latest runner',
+              'seed_start': ${{ inputs.seed_start || 1 }},
+              'seed_count': len(records),
+              'instances_per_event': ${{ inputs.instances_per_event || 4 }},
+              'raw_scores': scores,
+              'mean_raw_score': mean,
+              'sample_stdev_raw_score': stdev,
+              'takeover_margin_at_mean': mean * 0.01,
+              'quarter_margin': mean * 0.0025,
+              'variance_gate_passed': stdev <= mean * 0.0025,
+              'event_mean_scores': means,
+              'wall_time_seconds': {'mean': statistics.fmean(times), 'max': max(times)},
+              'peak_container_memory_mib': max(memory, default=0.0),
+              'reference_mean_scores': reference_means,
+              'reference_ordering': reference_ordering,
+              'baseline_beats_both_weaker_references_every_seed': all(
+                  reference_scores['baseline'][index] > reference_scores['static'][index]
+                  and reference_scores['baseline'][index] > reference_scores['random'][index]
+                  for index in range(len(scores))),
+          }
+          pathlib.Path('data/calibration-summary.json').write_text(json.dumps(report, indent=2) + '\\n')
+          print('### baseline on native amd64 (20 full seeds)\n')
           print('```yaml')
-          print(f"baseline_raw_score: {r['raw_scores'][0]:.4f}")
+          for key in ('mean_raw_score', 'sample_stdev_raw_score', 'takeover_margin_at_mean',
+                      'quarter_margin', 'variance_gate_passed', 'event_mean_scores',
+                      'wall_time_seconds', 'peak_container_memory_mib', 'reference_mean_scores',
+                      'reference_ordering', 'baseline_beats_both_weaker_references_every_seed'):
+              print(f'{key}: {report[key]}')
           print('```\n')
-          print(f"- exact: `{r['raw_scores'][0]!r}`")
-          print(f"- attempts: {m['num_instances']}, finished: {m['num_finished']}")
-          print(f"- event scores: {m['event_scores']}")
-          print(f"- eval time: {m['eval_time_in_seconds']} s (referee timeout 900 s)")
-          reasons = {}
-          for i in m['instances']:
-              reasons[i['terminal_reason']] = reasons.get(i['terminal_reason'], 0) + 1
-          print(f"- terminal reasons: {reasons}")
-          assert r['raw_scores'][0] > 0, "baseline must score above zero"
+          print(f"- baseline raw scores: `{scores}`")
+          print('- full per-seed data and parsed summary are uploaded as workflow artifacts.')
           PY
+
+      - name: Upload calibration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-calibration-native-amd64
+          path: data/
 
       - name: Inference latency at the size cap, on this CPU
         run: |

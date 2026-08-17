@@ -12,8 +12,8 @@ import mujoco
 import numpy as np
 
 from .course import (EVENT_MAX_STEPS, EVENTS, GEOM_PREFIX, HIGH_JUMP_BARS_M, OVERHEAD_GROUP,
-                     PLINTH_TOP, TRACK_HALF_W, WORLD_GROUP, EventLayout, build_event,
-                     course_xml_fragment, sample_frictions)
+                     PLINTH_TOP, TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRACK_HALF_W,
+                     WORLD_GROUP, EventLayout, build_event, course_xml_fragment, sample_frictions)
 
 ASSETS = pathlib.Path(__file__).parent / "assets"
 
@@ -51,10 +51,11 @@ GAIT_PERIOD = 0.8
 # fleeting toe scrape while remaining tiny relative to a real flight phase.
 MIN_AIRBORNE_STEPS = 20       # 40 ms with no supporting feet
 MIN_SUPPORT_STEPS = 4         # 8 ms continuous legal support
-TAKEOFF_BOARD_BEFORE_M = 0.35
-TAKEOFF_BOARD_AFTER_M = 0.05
 HIGH_CLEARANCE_MARGIN_M = 0.08
 HIGH_LANDING_OFFSET_M = 0.75
+SUPPORT_TOP_TOLERANCE_M = 0.06
+SUPPORT_NORMAL_Z_MIN = 0.65
+MIN_SUPPORT_IMPULSE_NS = 0.50
 
 
 class InvalidAction(ValueError):
@@ -182,10 +183,13 @@ class OlympicsSim:
         }
         self._surface_kind_by_geom = {geoms[i]: surface.kind
                                       for i, surface in enumerate(self.layout.surfaces)}
-        self._obstacle_geom_ids = {
-            surface.kind: geoms[i] for i, surface in enumerate(self.layout.surfaces)
-            if not surface.walkable
-        }
+        self._surface_by_geom = {geoms[i]: surface for i, surface in enumerate(self.layout.surfaces)}
+        self._surface_top_z_by_geom = {geoms[i]: surface.z + surface.hz
+                                       for i, surface in enumerate(self.layout.surfaces)}
+        self._obstacle_geom_ids: dict[str, set[int]] = {}
+        for i, surface in enumerate(self.layout.surfaces):
+            if not surface.walkable:
+                self._obstacle_geom_ids.setdefault(surface.kind, set()).add(geoms[i])
         self._ray_mask = np.zeros(6, np.uint8)
         self._ray_mask[WORLD_GROUP] = 1
         self._up_mask = np.zeros(6, np.uint8)
@@ -200,15 +204,20 @@ class OlympicsSim:
         self._best_clearance = 0.0
         self._jump_distance = 0.0
         self._jump_landed = False
+        self._landing_contact_x: float | None = None
+        self._takeoff_contact_x: float | None = None
         self._triple_phase = 0
         self._jump_state = "approach"
         self._takeoff_foot: str | None = None
         self._airborne_steps = 0
         self._support_steps = 0
+        self._support_impulse_ns = 0.0
         self._prev_x = self.layout.start_x
         self._high_crossed = False
         self._high_valid_crossing = False
         self._high_airborne_steps = 0
+        self._foot_contact_xs: dict[tuple[str, str], list[float]] = {}
+        self._foot_contact_forces: dict[tuple[str, str], float] = {}
         self._event_reason: str | None = None
 
     @property
@@ -238,6 +247,7 @@ class OlympicsSim:
         return {"bar_height_m": float(self.layout.challenge.get("bar_height_m", 0.0)),
                 "best_clearance_m": self._best_clearance,
                 "jump_distance_m": self._jump_distance,
+                "takeoff_contact_x_m": self._takeoff_contact_x or 0.0,
                 "triple_phase": float(self._triple_phase)}
 
     def reset(self) -> np.ndarray:
@@ -258,15 +268,20 @@ class OlympicsSim:
         self._best_clearance = 0.0
         self._jump_distance = 0.0
         self._jump_landed = False
+        self._landing_contact_x = None
+        self._takeoff_contact_x = None
         self._triple_phase = 0
         self._jump_state = "approach"
         self._takeoff_foot = None
         self._airborne_steps = 0
         self._support_steps = 0
+        self._support_impulse_ns = 0.0
         self._prev_x = float(self.data.qpos[0])
         self._high_crossed = False
         self._high_valid_crossing = False
         self._high_airborne_steps = 0
+        self._foot_contact_xs = {}
+        self._foot_contact_forces = {}
         self._event_reason = None
         return self._obs()
 
@@ -332,9 +347,16 @@ class OlympicsSim:
             else:
                 self._event_reason = "bar_missed"
                 return
-        if (self._high_valid_crossing and x >= bar_x + HIGH_LANDING_OFFSET_M and contacts
-                and not self._jump_contact_illegal(contacts, "track")):
-            self._event_reason = "cleared"
+        if self._high_valid_crossing:
+            if self._jump_contact_illegal(contacts, "track"):
+                self._event_reason = "high_foul"
+                return
+            if x >= bar_x + HIGH_LANDING_OFFSET_M and contacts and self._only_surface(contacts, "track"):
+                if self._accumulate_support(contacts, "track"):
+                    self._event_reason = "cleared"
+            else:
+                self._support_steps = 0
+                self._support_impulse_ns = 0.0
         elif self._high_crossed and x >= bar_x + HIGH_LANDING_OFFSET_M and not self._high_valid_crossing:
             self._event_reason = "bar_missed"
 
@@ -350,17 +372,23 @@ class OlympicsSim:
     def _observe_takeoff(self, x: float, takeoff: float,
                          contacts: dict[str, set[str]]) -> bool:
         """Remember a one-foot take-off from the narrow legal board zone."""
-        feet = self._feet_on(contacts, "track")
-        if takeoff - TAKEOFF_BOARD_BEFORE_M <= x <= takeoff + TAKEOFF_BOARD_AFTER_M:
-            if len(feet) == 1:
-                self._takeoff_foot = next(iter(feet))
+        feet = self._feet_on(contacts, "takeoff_board")
+        if len(feet) == 1:
+            foot = next(iter(feet))
+            if self._only_foot_on(contacts, "takeoff_board", foot):
+                self._takeoff_foot = foot
+                self._takeoff_contact_x = self._first_foot_contact_x(contacts, "takeoff_board", takeoff)
         if contacts:
             self._airborne_steps = 0
-            if x > takeoff + TAKEOFF_BOARD_AFTER_M and self._takeoff_foot is None:
+            valid_board = (self._takeoff_foot is not None
+                           and self._only_foot_on(contacts, "takeoff_board", self._takeoff_foot))
+            if self._takeoff_foot is not None and not valid_board:
+                self._event_reason = "jump_foul"
+            elif self.max_x > takeoff + TAKEOFF_BOARD_AFTER_M:
                 self._event_reason = "jump_foul"
             return False
         if self._takeoff_foot is None:
-            if x > takeoff + TAKEOFF_BOARD_AFTER_M:
+            if self.max_x > takeoff + TAKEOFF_BOARD_AFTER_M:
                 self._event_reason = "jump_foul"
             return False
         self._airborne_steps += 1
@@ -380,13 +408,16 @@ class OlympicsSim:
             return
         if not contacts:
             self._support_steps = 0
+            self._support_impulse_ns = 0.0
             return
         if not self._only_surface(contacts, "sand"):
             self._event_reason = "jump_foul"
             return
-        self._support_steps += 1
-        if self._support_steps >= MIN_SUPPORT_STEPS:
-            self._jump_distance = max(0.0, x - takeoff)
+        if self._support_steps == 0:
+            self._landing_contact_x = self._first_foot_contact_x(contacts, "sand", x)
+        if self._accumulate_support(contacts, "sand"):
+            landing_x = self._landing_contact_x if self._landing_contact_x is not None else x
+            self._jump_distance = max(0.0, landing_x - takeoff)
             self._jump_landed = True
             self._event_reason = "landed"
 
@@ -416,13 +447,16 @@ class OlympicsSim:
                 return
             if not contacts:
                 self._support_steps = 0
+                self._support_impulse_ns = 0.0
                 return
             if not self._only_surface(contacts, "sand"):
                 self._event_reason = "jump_foul"
                 return
-            self._support_steps += 1
-            if self._support_steps >= MIN_SUPPORT_STEPS:
-                self._jump_distance = max(0.0, x - takeoff)
+            if self._support_steps == 0:
+                self._landing_contact_x = self._first_foot_contact_x(contacts, "sand", x)
+            if self._accumulate_support(contacts, "sand"):
+                landing_x = self._landing_contact_x if self._landing_contact_x is not None else x
+                self._jump_distance = max(0.0, landing_x - takeoff)
                 self._jump_landed = True
                 self._triple_phase = 3
                 self._event_reason = "landed"
@@ -434,15 +468,16 @@ class OlympicsSim:
             return
         if not contacts:
             self._support_steps = 0
+            self._support_impulse_ns = 0.0
             return
         if foot is None or not self._only_foot_on(contacts, kind, foot):
             self._event_reason = "jump_foul"
             return
-        self._support_steps += 1
-        if self._support_steps >= MIN_SUPPORT_STEPS:
+        if self._accumulate_support(contacts, kind):
             self._jump_state = next_state
             self._triple_phase = phase
             self._support_steps = 0
+            self._support_impulse_ns = 0.0
 
     def _triple_departure(self, contacts: dict[str, set[str]], kind: str, foot: str | None,
                           next_state: str) -> None:
@@ -461,17 +496,45 @@ class OlympicsSim:
 
     def _foot_contacts(self) -> dict[str, set[str]]:
         contacts: dict[str, set[str]] = {"left": set(), "right": set()}
+        self._foot_contact_xs = {}
+        self._foot_contact_forces = {}
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             b1 = int(self.model.geom_bodyid[contact.geom1])
             b2 = int(self.model.geom_bodyid[contact.geom2])
             kind2 = self._surface_kind_by_geom.get(int(contact.geom2))
             kind1 = self._surface_kind_by_geom.get(int(contact.geom1))
-            if b1 in self._foot_bodies and kind2 is not None:
-                contacts[self._foot_bodies[b1]].add(kind2)
-            if b2 in self._foot_bodies and kind1 is not None:
-                contacts[self._foot_bodies[b2]].add(kind1)
+            force = np.zeros(6, np.float64)
+            mujoco.mj_contactForce(self.model, self.data, i, force)
+            normal_force = max(0.0, float(force[0]))
+            if (b1 in self._foot_bodies and kind2 is not None
+                    and self._is_top_course_contact(int(contact.geom2), contact)):
+                foot = self._foot_bodies[b1]
+                contacts[foot].add(kind2)
+                self._foot_contact_xs.setdefault((foot, kind2), []).append(float(contact.pos[0]))
+                self._foot_contact_forces[(foot, kind2)] = (
+                    self._foot_contact_forces.get((foot, kind2), 0.0) + normal_force)
+            if (b2 in self._foot_bodies and kind1 is not None
+                    and self._is_top_course_contact(int(contact.geom1), contact)):
+                foot = self._foot_bodies[b2]
+                contacts[foot].add(kind1)
+                self._foot_contact_xs.setdefault((foot, kind1), []).append(float(contact.pos[0]))
+                self._foot_contact_forces[(foot, kind1)] = (
+                    self._foot_contact_forces.get((foot, kind1), 0.0) + normal_force)
         return {foot: kinds for foot, kinds in contacts.items() if kinds}
+
+    def _is_top_course_contact(self, course_geom: int, contact) -> bool:
+        top = self._surface_top_z_by_geom.get(course_geom)
+        surface = self._surface_by_geom.get(course_geom)
+        if top is None or surface is None or not surface.walkable:
+            return False
+        dx, dy = float(contact.pos[0]) - surface.x, float(contact.pos[1]) - surface.y
+        c, s = math.cos(surface.yaw), math.sin(surface.yaw)
+        local_x, local_y = c * dx + s * dy, -s * dx + c * dy
+        return (abs(float(contact.pos[2]) - top) <= SUPPORT_TOP_TOLERANCE_M
+                and abs(float(contact.frame[2])) >= SUPPORT_NORMAL_Z_MIN
+                and abs(local_x) <= surface.hx + SUPPORT_TOP_TOLERANCE_M
+                and abs(local_y) <= surface.hy + SUPPORT_TOP_TOLERANCE_M)
 
     @staticmethod
     def _feet_on(contacts: dict[str, set[str]], kind: str) -> set[str]:
@@ -485,6 +548,23 @@ class OlympicsSim:
     def _only_foot_on(contacts: dict[str, set[str]], kind: str, foot: str) -> bool:
         return set(contacts) == {foot} and contacts.get(foot) == {kind}
 
+    def _first_foot_contact_x(self, contacts: dict[str, set[str]], kind: str,
+                              fallback_x: float) -> float:
+        points = [point for foot, kinds in contacts.items() if kind in kinds
+                  for point in self._foot_contact_xs.get((foot, kind), [])]
+        return min(points, default=fallback_x)
+
+    def _accumulate_support(self, contacts: dict[str, set[str]], kind: str) -> bool:
+        """Confirm support only after both a short duration and real normal impulse."""
+        force_keys = [(foot, kind) for foot, kinds in contacts.items() if kind in kinds]
+        known_force = any(key in self._foot_contact_forces for key in force_keys)
+        normal_force = (sum(self._foot_contact_forces.get(key, 0.0) for key in force_keys)
+                        if known_force else MIN_SUPPORT_IMPULSE_NS / (MIN_SUPPORT_STEPS * PHYS_DT))
+        self._support_steps += 1
+        self._support_impulse_ns += normal_force * PHYS_DT
+        return (self._support_steps >= MIN_SUPPORT_STEPS
+                and self._support_impulse_ns >= MIN_SUPPORT_IMPULSE_NS)
+
     def _jump_contact_illegal(self, contacts: dict[str, set[str]], allowed: str) -> bool:
         """Reject wrong surfaces and any non-foot course contact after take-off."""
         if contacts and not self._only_surface(contacts, allowed):
@@ -497,16 +577,21 @@ class OlympicsSim:
                 if kind is None:
                     continue
                 body = int(self.model.geom_bodyid[robot_gid])
-                if body not in self._foot_bodies:
+                if body not in self._foot_bodies or not self._is_top_course_contact(course_gid, contact):
                     return True
         return False
 
     def _hits(self, kind: str) -> bool:
-        gid = self._obstacle_geom_ids.get(kind)
-        if gid is None:
+        gids = self._obstacle_geom_ids.get(kind)
+        if not gids:
             return False
-        return any(self.data.contact[i].geom1 == gid or self.data.contact[i].geom2 == gid
+        return any(self._geom_pair_hits(gids, int(self.data.contact[i].geom1),
+                                        int(self.data.contact[i].geom2))
                    for i in range(self.data.ncon))
+
+    @staticmethod
+    def _geom_pair_hits(gids: set[int], geom1: int, geom2: int) -> bool:
+        return geom1 in gids or geom2 in gids
 
     # -- perception -----------------------------------------------------------------------
 
@@ -520,7 +605,9 @@ class OlympicsSim:
         if self.layout.is_circular:
             radius = float(self.layout.challenge["radius_m"])
             theta = math.atan2(y, x)
-            return theta + math.pi / 2, math.hypot(x, y) - radius, max(0.0, 400.0 - self._circle_distance)
+            # Positive cross-track is always to the runner's left. For CCW
+            # travel that is toward the centre, not outward from the circle.
+            return theta + math.pi / 2, radius - math.hypot(x, y), max(0.0, 400.0 - self._circle_distance)
         return 0.0, y, max(0.0, self.layout.finish - x)
 
     def _ray_down(self, x: float, y: float, z_from: float) -> float:

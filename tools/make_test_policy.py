@@ -45,9 +45,13 @@ class TestPolicy(nn.Module):
         return action, state_out
 
 
-def build(out: pathlib.Path, seed: int = 0) -> None:
+def build(out: pathlib.Path, seed: int = 0, zero: bool = False) -> None:
     torch.manual_seed(seed)
     policy = TestPolicy().eval()
+    if zero:
+        with torch.no_grad():
+            for parameter in policy.parameters():
+                parameter.zero_()
     obs = torch.zeros(1, OBS_DIM)
     state = torch.zeros(1, STATE_DIM)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -63,5 +67,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="/tmp/test_policy.onnx")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--zero", action="store_true", help="emit a valid stationary reference policy")
     a = ap.parse_args()
-    build(pathlib.Path(a.out), a.seed)
+    build(pathlib.Path(a.out), a.seed, zero=a.zero)

@@ -54,6 +54,7 @@ EVENT_MAX_STEPS = {
 HURDLE_HEIGHTS_M = (0.55, 0.60, 0.65, 0.70, 0.75,
                      0.80, 0.85, 0.90, 1.00, 1.15)
 HIGH_JUMP_BARS_M = (1.00, 1.10, 1.20, 1.30)
+TAKEOFF_BOARD_BEFORE_M, TAKEOFF_BOARD_AFTER_M = 0.35, 0.05
 LONG_TAKEOFF_M, LONG_LANDING_M = 15.0, 21.0
 TRIPLE_TAKEOFF_M = 12.0
 TRIPLE_HOP_START_M, TRIPLE_HOP_LENGTH_M = 14.0, 1.5
@@ -65,6 +66,7 @@ COLOR = {
     "track": ".54 .57 .61 1",
     "hurdle": ".85 .26 .32 1",
     "bar": ".98 .89 .22 1",
+    "takeoff_board": ".93 .95 .98 1",
     "sand": ".78 .62 .35 1",
     "hop_pad": ".42 .72 .88 1",
     "step_pad": ".32 .60 .86 1",
@@ -161,7 +163,9 @@ def _high_jump(challenge: Mapping[str, float]) -> EventLayout:
 def _long_jump() -> EventLayout:
     takeoff, landing = LONG_TAKEOFF_M, LONG_LANDING_M
     surfaces = [
-        _slab(-3.0, takeoff + 3.0, kind="track"),
+        _slab(-3.0, takeoff - TAKEOFF_BOARD_BEFORE_M + 3.0, kind="track"),
+        _slab(takeoff - TAKEOFF_BOARD_BEFORE_M,
+              TAKEOFF_BOARD_BEFORE_M + TAKEOFF_BOARD_AFTER_M, kind="takeoff_board"),
         _slab(landing, 24.0, kind="sand"),
     ]
     return EventLayout("long_jump", tuple(surfaces), -2.0, 0.0, 0.0, landing,
@@ -173,7 +177,9 @@ def _triple_jump() -> EventLayout:
     # landing only follows from three separate, controlled single-leg phases.
     takeoff, landing = TRIPLE_TAKEOFF_M, TRIPLE_LANDING_M
     surfaces = [
-        _slab(-3.0, takeoff + 3.0, kind="track"),
+        _slab(-3.0, takeoff - TAKEOFF_BOARD_BEFORE_M + 3.0, kind="track"),
+        _slab(takeoff - TAKEOFF_BOARD_BEFORE_M,
+              TAKEOFF_BOARD_BEFORE_M + TAKEOFF_BOARD_AFTER_M, kind="takeoff_board"),
         _slab(TRIPLE_HOP_START_M, TRIPLE_HOP_LENGTH_M, kind="hop_pad"),
         _slab(TRIPLE_STEP_START_M, TRIPLE_STEP_LENGTH_M, kind="step_pad"),
         _slab(landing, 24.0, kind="sand"),

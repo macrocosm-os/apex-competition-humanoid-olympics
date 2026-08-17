@@ -35,6 +35,10 @@ an incomplete attempt remains below 0.25. Faster legal race finishes, higher cle
 longer valid horizontal jumps earn more. Limited progress credit remains useful for local training
 without outweighing a complete attempt.
 
+The v0.1 launch configuration is fixed: four attempts of every event, 8 m/s maximum wind,
+500 ms per action, and a replay history recorded at stride 2. The round seed is the only
+score-affecting input that changes between rounds.
+
 The round result is:
 
 ```
@@ -98,7 +102,7 @@ mkdir -p /tmp/olympics-data && chmod 777 /tmp/olympics-data
 docker run --rm --network olympics-net -v /tmp/olympics-data:/data \
   -e MATCH_ID=local -e SEED=1 -e NUM_PLAYERS=1 \
   -e PLAYER_URLS=http://olympics-player:8000 \
-  -e CONFIG_JSON='{"seed":1,"instances_per_event":4,"deadline_ms":500}' \
+  -e CONFIG_JSON='{"seed":1,"instances_per_event":4,"deadline_ms":500,"wind_max_ms":8,"record_history":true,"history_stride":2}' \
   olympics-referee
 jq '.raw_scores, .metadata.event_scores' /tmp/olympics-data/result.json
 ```

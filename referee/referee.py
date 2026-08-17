@@ -30,13 +30,23 @@ class OlympicsReferee(Referee):
     def play_game(self, ctx: RefereeContext, players: list[PlayerClient]) -> GameResult:
         started = time.monotonic()
         cfg = ctx.config or {}
-        instances_per_event = int(cfg.get("instances_per_event", DEFAULT_INSTANCES_PER_EVENT))
-        deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
-        wind_max = float(cfg.get("wind_max_ms", WIND_MAX_MS))
         seed = int(cfg.get("seed", ctx.seed))
-        record_history = bool(cfg.get("record_history", True))
-        history_stride = int(cfg.get("history_stride", DEFAULT_STRIDE))
         test_step_cap = int(cfg.get("test_step_cap", 0))
+        # The release configuration is part of the score definition. Test-only
+        # callers may reduce it under an explicit control-step cap, but a live
+        # round always evaluates the same 24 recorded attempts and conditions.
+        if test_step_cap > 0:
+            instances_per_event = int(cfg.get("instances_per_event", DEFAULT_INSTANCES_PER_EVENT))
+            deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
+            wind_max = float(cfg.get("wind_max_ms", WIND_MAX_MS))
+            record_history = bool(cfg.get("record_history", True))
+            history_stride = int(cfg.get("history_stride", DEFAULT_STRIDE))
+        else:
+            instances_per_event = DEFAULT_INSTANCES_PER_EVENT
+            deadline_ms = DEFAULT_DEADLINE_MS
+            wind_max = WIND_MAX_MS
+            record_history = True
+            history_stride = DEFAULT_STRIDE
         player = players[0]
         tasks = event_instances(instances_per_event, seed, wind_max)
 
@@ -131,6 +141,7 @@ class OlympicsReferee(Referee):
                 "num_finished": finishes,
                 "history_files": history_written,
                 "wind_max_ms": wind_max,
+                "history_stride": history_stride,
                 "eval_time_in_seconds": round(time.monotonic() - started, 1),
             },
         )

@@ -54,6 +54,11 @@ the previous 1.6 m horizon.
 All narrow gates, bar/hurdle contacts, and jump-phase contacts are sampled at each 500 Hz physics
 substep rather than only once per 20 ms policy action.
 
+Top-face foot contacts are the only supports accepted by a jump state machine. The controller must
+leave a 0.40 m board (0.35 m before to 0.05 m after the take-off line) on one foot; side scrapes,
+non-foot contacts, premature pad contacts, and a non-foot first sand contact foul the attempt.
+Landing distance is latched from that first legal sand-contact point, not from a later pelvis pose.
+
 ## Scoring and calibration
 
 Each attempt maps to `[0, 1]`; per-event means are then macro-averaged, so a long 400 m cannot
@@ -65,6 +70,10 @@ Round conditions are derived deterministically from one seed. Within each event 
 wind samples use a shifted lattice with opposing wind directions, reducing evaluation variance
 without freezing a known suite. High-jump attempts cycle through 1.00, 1.10, 1.20, and 1.30 m
 bar heights above the deck.
+
+The launch configuration is fixed across rounds: four attempts per event, 8 m/s maximum wind,
+500 ms action deadline, and history stride 2. Only the master seed changes; accepting a different
+event count or wind range would change the score distribution and is a future versioned release.
 
 The geometry and height band are implementation hypotheses until calibrated. Before the first
 release, run a solvability probe for high and triple jump, measure full-round standard deviation
