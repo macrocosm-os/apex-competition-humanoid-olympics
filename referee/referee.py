@@ -63,7 +63,14 @@ class OlympicsReferee(Referee):
             rec = InstanceRecorder(task_index, sim, history_stride) if record_history else None
             reason: str | None = None
             try:
-                player.reset(match_id=f"{ctx.match_id}:{task_index}", player_index=0, seed=0, config={})
+                # A malicious reset must not consume the persistence allowance
+                # after the 840 s scoring window.  Keep a tiny transport grace
+                # so urllib can surface a typed PlayerError rather than a raw
+                # socket error at the deadline.
+                reset_timeout = min(30.0, max(0.1, EVALUATION_BUDGET_S -
+                                               (time.monotonic() - started)))
+                player.reset(match_id=f"{ctx.match_id}:{task_index}", player_index=0, seed=0,
+                             config={}, timeout_s=reset_timeout)
             except PLAYER_FAULTS:
                 reason = "player_error"
 
@@ -72,7 +79,11 @@ class OlympicsReferee(Referee):
                     reason = "round_timeout"
                     break
                 try:
-                    action = player.act(observation=obs.tolist(), deadline_ms=deadline_ms)
+                    action_timeout = min(deadline_ms / 1000.0 + 1.0,
+                                         max(0.1, EVALUATION_BUDGET_S -
+                                             (time.monotonic() - started)))
+                    action = player.act(observation=obs.tolist(), deadline_ms=deadline_ms,
+                                        timeout_s=action_timeout)
                 except PLAYER_FAULTS:
                     reason = "player_error"
                     break

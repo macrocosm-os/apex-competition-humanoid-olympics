@@ -33,9 +33,11 @@ class Stub:
     """gym_v1's PlayerClient surface — the two methods the referee calls."""
 
     def reset(self, **kw):
+        # The HTTP client owns its timeout; the in-process player does not.
+        kw.pop("timeout_s", None)
         player.reset(**kw)
 
-    def act(self, observation, deadline_ms):
+    def act(self, observation, deadline_ms, timeout_s=None):
         return player.act(observation=observation, deadline_ms=deadline_ms)
 
 
