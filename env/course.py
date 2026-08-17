@@ -48,7 +48,11 @@ EVENT_MAX_STEPS = {
     "triple_jump": 1400,
 }
 
-HURDLE_HEIGHT_M = 0.70
+# The escalating hurdles form a within-run curriculum: a policy can make
+# meaningful early progress, but the 1.15 m final barrier is deliberately at
+# the frontier of what this legs-only G1 should be able to clear at speed.
+HURDLE_HEIGHTS_M = (0.55, 0.60, 0.65, 0.70, 0.75,
+                     0.80, 0.85, 0.90, 1.00, 1.15)
 HIGH_JUMP_BARS_M = (1.00, 1.10, 1.20, 1.30)
 LONG_TAKEOFF_M, LONG_LANDING_M = 15.0, 21.0
 TRIPLE_TAKEOFF_M = 12.0
@@ -117,11 +121,11 @@ def _sprint_100() -> EventLayout:
 
 def _hurdles_100() -> EventLayout:
     surfaces = _straight(100.0)
-    # Ten 0.70 m barriers.  Each overhangs the lane boundary so a runner cannot
-    # skim around its end while leaving its pelvis nominally in bounds.
-    for x in np.linspace(12.0, 88.5, 10):
-        surfaces.append(Surface("hurdle", float(x), 0.0, PLINTH_TOP + HURDLE_HEIGHT_M / 2,
-                                0.12, TRACK_HALF_W + 0.20, HURDLE_HEIGHT_M / 2,
+    # Ten progressively taller barriers. Each overhangs the lane boundary so a
+    # runner cannot skim around its end while leaving its pelvis in bounds.
+    for x, height in zip(np.linspace(12.0, 88.5, 10), HURDLE_HEIGHTS_M, strict=True):
+        surfaces.append(Surface("hurdle", float(x), 0.0, PLINTH_TOP + height / 2,
+                                0.12, TRACK_HALF_W + 0.20, height / 2,
                                 walkable=False))
     return EventLayout("hurdles_100", tuple(surfaces), -2.0, 0.0, 0.0, 100.0)
 

@@ -40,8 +40,8 @@ the previous 1.6 m horizon.
 
 ## Event rules
 
-- Sprint and hurdles end at their 100 m finish. Hurdles are physical 0.70 m barriers; any robot
-  contact ends that attempt.
+- Sprint and hurdles end at their 100 m finish. The ten physical hurdles rise from 0.55 m to
+  1.15 m (with the last two at 1.00 m and 1.15 m); any robot contact ends that attempt.
 - High jump has a physical horizontal bar. The pelvis must cross the bar plane above the selected
   clearance height while both feet have been unsupported for 40 ms, without touching the bar, and
   then make a supported far-side landing.

@@ -10,9 +10,10 @@ Each evaluation contains the same number of attempts of every discipline, and th
 score is their equal-weight mean. The aim is a fast, adaptive, all-round humanoid athlete — not
 a policy specialised to one obstacle.
 
-The initial course preset is deliberately severe: a 24 s 100 m, 72 s circular 400 m, ten 0.70 m
-hurdles, 1.00–1.30 m high bars, a 6 m long-jump void, and wide legal triple-jump phases. A first
-complete all-round performance is intended to be a meaningful breakthrough.
+The initial course preset is deliberately severe: a 24 s 100 m, 72 s circular 400 m, ten rising
+hurdles from 0.55 to 1.15 m, 1.00–1.30 m high bars, a 6 m long-jump void, and wide legal
+triple-jump phases. A first complete all-round performance is intended to be a meaningful
+breakthrough.
 
 | Discipline | Skill tested |
 |---|---|

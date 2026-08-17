@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 
 from env import OlympicsSim, instance_score, instance_spec
-from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHT_M, LONG_LANDING_M, LONG_TAKEOFF_M,
+from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHTS_M, LONG_LANDING_M, LONG_TAKEOFF_M,
                         TRIPLE_LANDING_M, TRIPLE_TAKEOFF_M, build_event)
 from env.sim import (HIGH_CLEARANCE_MARGIN_M, HIGH_LANDING_OFFSET_M, MIN_AIRBORNE_STEPS,
                      MIN_SUPPORT_STEPS, PLINTH_TOP, _scene_xml)
@@ -27,8 +27,7 @@ def sim(event: str) -> OlympicsSim:
 # floor cannot ever become a lower route.
 hurdles = build_event("hurdles_100")
 assert len([s for s in hurdles.surfaces if s.kind == "hurdle"]) == 10
-assert math.isclose(next(s for s in hurdles.surfaces if s.kind == "hurdle").hz * 2,
-                    HURDLE_HEIGHT_M)
+assert tuple(round(s.hz * 2, 2) for s in hurdles.surfaces if s.kind == "hurdle") == HURDLE_HEIGHTS_M
 long_layout = build_event("long_jump")
 assert math.isclose(long_layout.challenge["landing_x_m"] - long_layout.challenge["takeoff_x_m"], 6.0)
 assert 'contype="0" conaffinity="0"' in _scene_xml(long_layout)
