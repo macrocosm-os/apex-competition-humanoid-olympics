@@ -27,17 +27,17 @@ after the signed candidate workflow finishes. It is not an onboarding request by
 
 | Item | Where | Status |
 |---|---|---|
-| Competition repo + final release tag | `macrocosm-os/apex-competition-humanoid-olympics` @ pending signed candidate/final tag | pending candidate release |
+| Competition repo + final release tag | `macrocosm-os/apex-competition-humanoid-olympics` @ signed candidate `v0.1.0-candidate.1` | final tag pending digest-pin commit |
 | `spec.yaml` (`apex.competition.v1`) + preflight | `spec.yaml`, `fixtures/input.json` | local stage/prod preflight passes; repeat after digest pin |
-| Player image | `ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player@sha256:<candidate>` | pending signed candidate build |
-| Referee image | `ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee@sha256:<candidate>` | pending signed candidate build |
+| Player image | `ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player@sha256:92e6aab7bfc511f1e6d107432cf1e368962c6fc716e1abd30ff8fbc1debea8a0` | candidate signature verified |
+| Referee image | `ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee@sha256:2197d8bfd18196ad74e93a902860c4590caeefafcaa37c38af48a98edccc532b` | candidate signature verified |
 | Layer-2 screen | n/a; fixed-shape ONNX artifact plus platform structural screen and player validation | n/a |
 | Round generation | n/a; one platform master seed is sufficient | complete |
 | Cosign identity + issuer | `.github/workflows/release.yml`; GitHub Actions OIDC | candidate workflow verifies it |
 | Input schema + fixture | `input.schema.json`, `fixtures/input.json` | complete |
 | Baseline integration artifact | `baseline/baseline.onnx` | pinned; native-amd64 20-seed calibration passed (run `32037213638`, artifact `9291517227`) |
 | Miner documentation | `README.md`, `docs/design.md` | complete |
-| Full end-to-end evidence | release CI two-container job + candidate calibration artifact | local constrained loop passed; signed candidate CI pending |
+| Full end-to-end evidence | release CI two-container job + candidate calibration artifact | candidate [release run 32039171270](https://github.com/macrocosm-os/apex-competition-humanoid-olympics/actions/runs/32039171270) passed all jobs |
 
 Score-affecting pins already committed:
 

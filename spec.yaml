@@ -12,12 +12,11 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# These are replaced with the release digest after the first Olympics images
-# are built and keyless-signed. They remain digest-shaped so `apex-dev
-# preflight` can validate the in-progress competition contract.
+# Built from signed candidate tag v0.1.0-candidate.1. The final release tag
+# rebuilds and verifies these immutable image contents before onboarding.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
-  digest: sha256:89eb38a24ccea07af7d18dc92f19f76bd09f1ba9635d838b78f0bd0a5fab9f65
+  digest: sha256:92e6aab7bfc511f1e6d107432cf1e368962c6fc716e1abd30ff8fbc1debea8a0
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
@@ -59,7 +58,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
-    digest: sha256:b64b5c530e87cb78770aa43f58509b35b00b6523ea112660867d48deb62dd6b6
+    digest: sha256:2197d8bfd18196ad74e93a902860c4590caeefafcaa37c38af48a98edccc532b
   timeout_s: 900
 
 signature:
