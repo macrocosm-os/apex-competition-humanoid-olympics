@@ -1,6 +1,5 @@
 {
   "seed": 1,
-  "num_instances": 24,
-  "max_steps_per_episode": 3000,
+  "instances_per_event": 4,
   "deadline_ms": 500
 }

@@ -1,4 +1,4 @@
-# humanoid_parkour PLAYER image (the miner submission server).
+# humanoid_olympics PLAYER image (the miner submission server).
 #
 # VENDORED gym_v1 pattern: build FROM python:3.12-slim and COPY the vendored gym_v1/ in — we do
 # NOT `FROM apex-player-base` (that base is not published to any registry, so it only resolves on
@@ -11,7 +11,7 @@
 # (all of that lives in the referee image).
 #
 # Build (context = THIS repo root):
-#   docker build -f player/Dockerfile -t humanoid-parkour-player .
+#   docker build -f player/Dockerfile -t humanoid-olympics-player .
 FROM python:3.12-slim
 
 # Match how the platform runs sandboxes: non-root uid 1000, /app + /data owned by it.

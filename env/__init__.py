@@ -1,13 +1,10 @@
-"""Humanoid Parkour environment: course, physics, scoring.
+"""Humanoid Olympics environment shared by the referee and local tools."""
 
-Shared by the referee image and the local tools so the numbers can never diverge.
-"""
+from .course import EVENT_LABELS, EVENT_MAX_STEPS, EVENTS, TRACK_HALF_W, nominal_mu
+from .scoring import instance_score, meet_score
+from .sim import (ACT_DIM, OBS_DIM, STATE_DIM, InstanceParams, InvalidAction, OlympicsSim,
+                  event_instances, instance_spec)
 
-from .course import COURSE_LENGTH, SEGMENTS, TRACK_HALF_W, nominal_mu
-from .scoring import instance_score
-from .sim import (ACT_DIM, OBS_DIM, STATE_DIM, InstanceParams, InvalidAction, ParkourSim,
-                  instance_spec)
-
-__all__ = ["ACT_DIM", "COURSE_LENGTH", "OBS_DIM", "STATE_DIM", "InstanceParams", "InvalidAction",
-           "ParkourSim", "SEGMENTS", "TRACK_HALF_W", "instance_score", "instance_spec",
-           "nominal_mu"]
+__all__ = ["ACT_DIM", "EVENT_LABELS", "EVENT_MAX_STEPS", "EVENTS", "OBS_DIM", "STATE_DIM",
+           "InstanceParams", "InvalidAction", "OlympicsSim", "TRACK_HALF_W", "event_instances",
+           "instance_score", "instance_spec", "meet_score", "nominal_mu"]

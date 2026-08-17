@@ -1,4 +1,4 @@
-"""humanoid_parkour gym_v1 PLAYER server (the image's `entrypoints.evaluate.command`).
+"""humanoid_olympics gym_v1 PLAYER server (the image's `entrypoints.evaluate.command`).
 
 The platform writes the miner's ONNX policy to /app/submission.onnx; this server loads it,
 validates the interface, and serves /health /reset /act. There is no miner code in this sandbox —
@@ -89,7 +89,7 @@ def _load_session() -> ort.InferenceSession:
     return session
 
 
-class ParkourPlayer(Player):
+class OlympicsPlayer(Player):
     def __init__(self) -> None:
         # Load + validate WITHOUT raising out of __init__. Raising here kills the process
         # before serve() binds the port, and gym_v1's Referee.run() calls wait_until_ready()
@@ -117,8 +117,7 @@ class ParkourPlayer(Player):
         return ready
 
     def reset(self, match_id: str, player_index: int, seed: int, config: dict[str, Any]) -> None:
-        # New instance, fresh memory. Carrying state across instances would let a policy count
-        # episodes and infer where it sits in the (fixed, stratified) friction sweep.
+        # New event attempt, fresh recurrent memory.
         self._state = np.zeros((1, STATE_DIM), np.float32)
         self._match, self._step = match_id, 0
         _api("reset", match=match_id, player_index=player_index, status="ok")
@@ -147,4 +146,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
-    serve(ParkourPlayer(), port=args.port, readiness_path="/health")
+    serve(OlympicsPlayer(), port=args.port, readiness_path="/health")

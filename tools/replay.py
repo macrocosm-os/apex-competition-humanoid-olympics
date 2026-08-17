@@ -15,8 +15,9 @@ quantity a renderer needs. Nothing is integrated, so a replay cannot drift from 
 way re-simulating from the action log could — and it needs neither the submission nor the round
 seed, so a run stays viewable after both are gone.
 
-The scene is rebuilt from the frictions stored per instance, through the same `_lit_model` the
-preview uses, so it is the scored geometry with lights added and nothing else changed.
+The scene is rebuilt from the event, challenge, and frictions stored per attempt, through the
+same `_lit_model` the preview uses, so it is the scored geometry with lights added and nothing
+else changed.
 
 `--live` needs `mjpython` on macOS rather than `python`: the passive viewer has to own the main
 thread there. Filming to mp4 is fully headless and has no such constraint. Needs ffmpeg.
@@ -30,7 +31,6 @@ import time
 
 import mujoco
 
-from env.course import COURSE_LENGTH
 from env.history import read_all, unpack
 from tools.preview import OUT, _camera, _lit_model, frames_dir, mp4, png
 
@@ -49,6 +49,8 @@ class Run:
         self.ticks = unpack(frames["ticks"])
         self.action = unpack(frames["action"])
         self.frictions = unpack(record["conditions"]["frictions"])
+        self.event = str(record["conditions"]["event"])
+        self.challenge = dict(record["conditions"].get("challenge") or {})
         timing = record.get("timing", {})
         self.frame_dt = float(timing.get("control_dt", 0.02)) * int(timing.get("stride", 1))
 
@@ -62,11 +64,11 @@ class Run:
 
     def describe(self) -> str:
         o, c = self.outcome, self.record["conditions"]
-        return (f"instance {self.index:3d}  mu {c['friction_level']:.3f} "
+        return (f"instance {self.index:3d}  {self.event:14}  mu {c['friction_level']:.3f} "
                 f"wind {float(c.get('wind_speed_ms') or 0):4.1f} m/s @ "
                 f"{float(c.get('wind_dir_deg') or 0):5.1f}deg  "
-                f"{str(o.get('terminal_reason')):14s} {float(o.get('distance_m') or 0):6.2f} m "
-                f"of {COURSE_LENGTH:.1f} m  score {self.score:.4f}  {self.frames} frames "
+                f"{str(o.get('terminal_reason')):14s} {float(o.get('distance_m') or 0):6.2f} m  "
+                f"score {self.score:.4f}  {self.frames} frames "
                 f"({max(self.frames - 1, 0) * self.frame_dt:.1f} s)")
 
 
@@ -84,7 +86,7 @@ def _stride_for(frame_dt: float, target_fps: float) -> tuple[int, float]:
 
 def _scene(run: Run) -> tuple[mujoco.MjModel, mujoco.MjData]:
     """Rebuild the instance's scene from its recorded frictions, refusing a mismatched history."""
-    model = _lit_model(run.frictions)
+    model = _lit_model(run.event, run.frictions, run.challenge)
     if run.qpos.shape[1] != model.nq:
         raise ValueError(f"history has nq={run.qpos.shape[1]}, this model has nq={model.nq}; "
                          "the file predates a model change and cannot be replayed against it")

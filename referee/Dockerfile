@@ -1,4 +1,4 @@
-# humanoid_parkour REFEREE image (the scorer sandbox: physics + ground truth + scoring).
+# humanoid_olympics REFEREE image (the scorer sandbox: physics + ground truth + scoring).
 #
 # VENDORED gym_v1 pattern: build FROM python:3.12-slim and COPY the vendored gym_v1/ in — we do
 # NOT `FROM apex-referee-base` (not published to any registry; would fail in release CI).
@@ -8,7 +8,7 @@
 # NUM_PLAYERS and reads /data/result.json.
 #
 # Build (context = THIS repo root):
-#   docker build -f referee/Dockerfile -t humanoid-parkour-referee .
+#   docker build -f referee/Dockerfile -t humanoid-olympics-referee .
 FROM python:3.12-slim
 
 # Match how the platform runs sandboxes: non-root uid 1000, /app + /data owned by it. /data is

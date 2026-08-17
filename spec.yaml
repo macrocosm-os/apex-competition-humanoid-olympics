@@ -1,134 +1,67 @@
 schema: apex.competition.v1
-id: humanoid_parkour
-version: 0.6.0
-display_name: "Humanoid Parkour"
+id: humanoid_olympics
+version: 0.1.0
+display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
 
-# Memory measured under these exact limits: referee peaks at 560 MiB (36% of 1.5Gi), player at
-# 30 MiB. Referee memory does not scale with submission quality — a policy that survives longer
-# runs more steps, and steps do not allocate — so this is close to the true ceiling, not a
-# baseline figure that better solutions will grow into.
-#
-# cpu_limit is 2, not 1, and that is a wall-clock decision rather than a compute one. The
-# evaluation is a synchronous /act ping-pong: neither sandbox is CPU-bound (measured 0.64 CPU
-# average, 2 throttled CFS periods out of 1690), but at a 1-CPU ceiling the HTTP server thread,
-# the interpreter and the kernel's network path serialise against each other. Doubling the ceiling
-# halved the per-step cost — 14.99 -> 7.71 ms measured on the same suite — while median policy
-# inference barely moved (0.525 -> 0.510 ms), which is the signature of a concurrency ceiling
-# rather than starvation. The platform derives cpu_request as 25% of this, so 2 also lifts the
-# scheduling guarantee from 250m to 500m.
+# The referee holds one compiled G1 scene at a time, rather than six: event
+# attempts are grouped by event and a 24-attempt meet stays within 1.5 GiB.
 resources:
   cpu_limit: 2
   mem_limit: 1.5Gi
   gpu_count: 0
 
-# Built, pushed, and keyless-cosign-signed by this repo's release workflow (see
-# .github/workflows/release.yml). `image` is the PLAYER image (loads + serves the miner's ONNX
-# policy).
-#
-# Pinned from the v0.6.0 release run (Actions run 31824999143). Both digests resolved from ghcr
-# by tag and their signatures verified: signature present, issuer is the GitHub OIDC endpoint,
-# and the cert SAN is this file's `cosign_identity` at refs/tags/v0.6.0, over source f6b1e06.
-# The platform pins by digest and rejects tags.
+# These are replaced with the release digest after the first Olympics images
+# are built and keyless-signed. They remain digest-shaped so `apex-dev
+# preflight` can validate the in-progress competition contract.
 image:
-  ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-player
+  ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:89eb38a24ccea07af7d18dc92f19f76bd09f1ba9635d838b78f0bd0a5fab9f65
 
-# ONNX artifact: the miner submits a policy graph, not code. The player image validates the
-# interface at load time (obs [batch,104] + state_in [batch,256] -> action [batch,12] +
-# state_out [batch,256], all float32); there is no code to screen and no Layer-2 screen image.
-#
-# 15 MB, lowered from 25 in 0.5.0. This IS a compute limit, which 0.4.0 got wrong.
-#
-# 0.4.0 claimed "NOT a compute limit: a 5.5M-param net runs 0.35 ms/step, so a full-survival run
-# costs 34 s". That figure came from a host-side probe. Measured IN the player sandbox on
-# evaluation hardware, a 5.89M-param / 22.5 MiB graph costs 2.62 ms/step — 7.5x the claim, or
-# ~252 s over a full-survival run, not 34 s. Inference is linear in artifact size (six models,
-# 0.13-22.5 MiB, residuals <= 0.012 ms), so size maps directly onto referee wall clock.
-#
-# Worse, size costs more than its own inference: going 0.13 -> 22.5 MiB added 4.89 ms/step of
-# which only 2.11 ms was inference. The rest is systemic — most plausibly cache and memory
-# pressure, since the player and referee share a node. At the 25 MB cap a full-survival run
-# projected to ~1,200 s against the referee's 900 s timeout.
-#
-# 15 MB pairs with max_steps_per_episode 3000 (see input.schema.json) to bring the worst case to
-# ~750 s. Every Unitree reference locomotion policy (G1, H1, H1-2) is 0.13-0.14 MB, so 15 MB is
-# still ~110x the class of policy this task needs and comfortably fits a ~3.9M-parameter net.
-#
-# The cap is not load-bearing against memorisation any more — 0.4.0 draws conditions from the
-# round seed, which is what makes a memorised suite worthless. It is load-bearing against the
-# timeout, which is why it cannot simply be raised again without re-measuring.
-#
-# The architecture itself is NOT constrained; only the tensor signature is.
+# A recurrent ONNX controller receives the same 104-float sensory contract as
+# its predecessor and emits 12 joint-position targets plus 256 opaque state
+# floats. The broad terrain preview now describes the active event's route.
 submission:
   artifact_type: onnx
   max_size_mb: 15
   target_path: /app/submission.onnx
 
-screening:            # Layer-1 generic weights validator (onnx artifact_type)
-  # Must match submission.max_size_mb: this is the gate that actually rejects, and it runs before
-  # the artifact is uploaded (backend.utils.submission_utils._passes_competition_screener).
+screening:
   max_size_mb: 15
-  min_weight_bytes: 10000        # rejects near-empty graphs / constant policies
-  max_code_weight_ratio: 0.1     # ignored for onnx — a graph carries no code
+  min_weight_bytes: 10000
+  max_code_weight_ratio: 0.1
 
 input_schema:
   $ref: ./input.schema.json
 
 defaults:
   baseline_score: 0.0
-  # 0.0 by choice. This is the platform's ENTRY BAR (score_to_beat = max(this, top_raw) * 1.01),
-  # and it binds until first blood — pinned to the measured 0.21497 (3 seeds, standard error ~62%
-  # of the takeover margin) it could sit above the true baseline and stall the round forever.
-  # Cost: round 1 goes to anything scoring > 0; self-corrects on the first real walker.
   baseline_raw_score: 0.0
   round_length_in_days: 2
-  submission_reveal_days: 5      # trained policies carry real R&D; protect them
+  submission_reveal_days: 5
   lower_is_better: false
 
 entrypoints:
-  # The PLAYER sandbox: serves the ONNX policy over gym_v1; the referee drives it one
-  # observation at a time. timeout_s must cover the whole evaluation (24 instances x <=3000
-  # control steps = 72,000 /act calls): measured 207 s for the baseline on evaluation hardware,
-  # and ~750 s worst case for a max-size policy that survives every step, against referee 900 s.
   evaluate:
     command: ["python", "/app/launch.py", "--port", "8000"]
-    network_disabled: false   # the referee must reach the player on the per-job network
+    network_disabled: false
     allow_internet: false
-    # Deliberately LONGER than referee.timeout_s (900): the player's clock starts earlier
-    # (image start + readiness polling) and it must outlive the referee. If the player is
-    # killed first, the referee's remaining instances score player_error — a zero the
-    # submission did not earn.
+    # A four-attempt meet has at most 63,600 control calls. The referee's
+    # internal 840-second budget leaves time to persist a result.
     timeout_s: 1200
     http_api:
       port: 8000
       readiness_path: /health
       protocol: gym_v1
 
-# The scorer sandbox: MuJoCo physics, the G1 model, the course, termination gates, scoring.
-# No generate_round entrypoint: the suite is a pure function of the round input.
 referee:
   protocol: gym_v1
   image:
-    ref: ghcr.io/macrocosm-os/apex-competition-humanoid-parkour-v2-referee
+    ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
     digest: sha256:b64b5c530e87cb78770aa43f58509b35b00b6523ea112660867d48deb62dd6b6
   timeout_s: 900
 
 signature:
-  # The `@refs/tags/*` suffix is REQUIRED, not decoration. A GitHub keyless signature's Fulcio
-  # certificate carries the SAN `<workflow path>@<ref>` — verified on our own signatures, which
-  # read `…/release.yml@refs/tags/v0.4.0`. The registry syncer anchors a glob-free identity as an
-  # exact-match regexp, so the bare path can never match and the spec is silently skipped on every
-  # sync pass. The registry had to patch this locally for 0.2.0
-  # (apex-competitions-registry@49193d9); fixing it here means the registry copy no longer has to.
-  #
-  # The repo was RENAMED from `-v2` to the bare name after v0.4.0 was signed. A Fulcio SAN is
-  # built from the repository at signing time, so v0.4.0's cert reads `...-v2/...@refs/tags/v0.4.0`
-  # (verified by decoding the cert off the pinned referee digest) while everything signed from
-  # now on will read the bare name. Pinning the old name here would mean the 0.6.0 signature
-  # never matches and the spec is silently skipped on every sync pass -- the same failure the
-  # `@refs/tags/*` note below describes. The already-registered 0.4.0 and 0.5.0 specs keep the
-  # `-v2` identity, because their signatures predate the rename.
-  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-parkour/.github/workflows/release.yml@refs/tags/*
+  cosign_identity: https://github.com/macrocosm-os/apex-competition-humanoid-olympics/.github/workflows/release.yml@refs/tags/*
   cosign_issuer: https://token.actions.githubusercontent.com

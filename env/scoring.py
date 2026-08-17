@@ -1,25 +1,54 @@
-"""Per-instance scoring for Humanoid Parkour. Shared by the referee and the
-local eval / variance-measurement tools so the numbers can never diverge.
-
-Per course instance (higher is better):
-    completed        1.0 + (max_steps - steps) / max_steps   -> in (1.0, 2.0]
-    fell / timeout / out_of_bounds
-                     progress (fraction of course covered)   -> in [0.0, 1.0)
-    physics_glitch / invalid or errored player
-                     0.0
-
-Any completion outranks any non-completion, faster completions outrank slower
-ones, and partial progress gives non-completing miners a training gradient.
-The round raw_score is the mean over all course instances.
-"""
+"""Bounded, equally weighted scoring for a Humanoid Olympics meet."""
 
 from __future__ import annotations
 
+import math
+from typing import Mapping
 
-def instance_score(terminal_reason: str, progress: float, steps: int, max_steps: int) -> float:
-    if terminal_reason == "completed":
-        return 1.0 + (max_steps - steps) / max_steps
-    if terminal_reason in ("fell", "timeout", "out_of_bounds"):
-        return progress
-    # physics_glitch, invalid_action, player_error: typed zero.
-    return 0.0
+
+RACE_EVENTS = frozenset({"sprint_100", "sprint_400", "hurdles_100"})
+JUMP_EVENTS = frozenset({"long_jump", "triple_jump"})
+
+
+def instance_score(event: str, terminal_reason: str, progress: float, steps: int, max_steps: int,
+                   metrics: Mapping[str, float] | None = None) -> float:
+    """Return one event result in ``[0, 1]``."""
+    metrics = metrics or {}
+    if terminal_reason in {"physics_glitch", "invalid_action", "player_error",
+                           "submission_not_ready", "out_of_bounds"}:
+        return 0.0
+
+    if event in RACE_EVENTS:
+        if terminal_reason == "completed":
+            # Completion earns [0.25, 1.00]; pace breaks ties without allowing
+            # a timeout to outrank a legitimate finish.
+            return 0.25 + 0.75 * max(0.0, 1.0 - steps / max(max_steps, 1))
+        return 0.24 * min(max(float(progress), 0.0), 1.0)
+
+    if event == "high_jump":
+        target = max(float(metrics.get("bar_height_m", 0.95)), 1e-6)
+        clearance = max(0.0, float(metrics.get("best_clearance_m", 0.0)))
+        if terminal_reason == "cleared":
+            normalized_height = min(max((target - 0.65) / 0.65, 0.0), 1.0)
+            return 0.25 + 0.75 * normalized_height
+        return 0.24 * min(clearance / target, 1.0)
+
+    if event in JUMP_EVENTS:
+        distance = max(0.0, float(metrics.get("jump_distance_m", 0.0)))
+        minimum = 4.0 if event == "long_jump" else 4.5
+        if terminal_reason == "landed":
+            return 0.25 + 0.75 * min(max((distance - minimum) / (9.0 - minimum), 0.0), 1.0)
+        return 0.20 * min(max(float(progress), 0.0), 1.0)
+
+    raise ValueError(f"unknown Olympic event {event!r}")
+
+
+def meet_score(rows: list[Mapping[str, float | str]], events: tuple[str, ...]) -> float:
+    """Mean the event means, so long races cannot outweigh jump disciplines."""
+    if not rows:
+        return 0.0
+    means = []
+    for event in events:
+        scores = [float(row["score"]) for row in rows if row.get("event") == event]
+        means.append(math.fsum(scores) / len(scores) if scores else 0.0)
+    return math.fsum(means) / len(means)

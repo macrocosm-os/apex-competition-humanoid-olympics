@@ -1,8 +1,8 @@
-"""One JSON file per evaluation instance: conditions, outcome, and the run itself.
+"""One JSON file per Olympic event attempt: conditions, outcome, and the run itself.
 
 The referee writes these to `/data/history/`, collected by the platform as `FileType.HISTORY`.
-Tron does the same via `/data/trace.jsonl`; a directory is used because parkour runs all 24
-instances in one container, so the per-game unit is a file.
+Tron does the same via `/data/trace.jsonl`; a directory is used because one Olympics meet runs
+many event attempts in one container, so the per-game unit is a file.
 
 Per frame: `qpos` for replay, and `action` — what the policy returned — as diagnostics.
 Re-simulating from actions would depend on bit-exact physics and could silently drift; positions
@@ -24,7 +24,7 @@ import numpy as np
 from .sim import FRAME_SKIP, PHYS_DT
 
 # Bump the minor half when adding keys a reader can ignore, the major half when it cannot.
-FORMAT = "humanoid_parkour_history/1"
+FORMAT = "humanoid_olympics_history/1"
 
 # Recording every control step is 50 Hz. 2 is the default because the replay renders at 25 fps
 # anyway (tools/replay.py picks a stride to hit ~30 fps), so at stride 2 the video is IDENTICAL
@@ -101,10 +101,11 @@ class InstanceRecorder:
             "instance": self.index,
             "num_instances": num_instances,
             "conditions": {
-                # Read off the instance's own params, not the caller's row, so the referee and
-                # the local tools cannot drift. `params.seed` is deliberately NOT included: the
-                # round seed is unpublished while a round is open, and a per-instance seed
-                # narrows it. The conditions are what the miner is owed, not what produced them.
+                "event": self._params.event,
+                "attempt": self._params.attempt,
+                "challenge": {k: float(v) for k, v in self._params.challenge.items()},
+                # Read from the attempt parameters, so local tools and the referee use one
+                # replay format and cannot drift.
                 "friction_level": round(self._params.friction_level, 4),
                 "wind_speed_ms": round(self._params.wind_speed, 2),
                 "wind_dir_deg": round(math.degrees(self._params.wind_dir), 1),
@@ -114,7 +115,7 @@ class InstanceRecorder:
             },
             "outcome": {k: row.get(k) for k in
                         ("terminal_reason", "progress", "distance_m", "steps", "sim_time_s",
-                         "score") if k in row},
+                         "metrics", "score") if k in row},
             "timing": {"phys_dt": PHYS_DT, "frame_skip": FRAME_SKIP,
                        "control_dt": PHYS_DT * FRAME_SKIP, "stride": self.stride},
             "frames": {

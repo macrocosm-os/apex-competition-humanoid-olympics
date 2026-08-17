@@ -5,26 +5,22 @@
 # be unusable (a 24-instance suite did not finish in 15 hours). And a host-side measurement is not
 # a substitute: host and image disagree by ~0.08%, against a 1% takeover margin.
 #
-# As of 0.4.0 friction and wind are drawn from the round seed, so raw_score is a random variable
-# over seeds. This measures ONE seed; run it across several to see the spread.
+# Friction and wind are drawn from the round seed, so raw_score is a random variable over seeds.
+# This measures one balanced meet; run it across several seeds to see the spread.
 #
 # It does NOT feed `spec.yaml defaults.baseline_raw_score`, which is deliberately 0.0 — that field
 # is the platform's entry bar, not a description of the baseline, and pinning it to a measured
 # mean risks stalling the competition on measurement noise (see the `defaults` block in spec.yaml).
-# What this workflow is for: judging submissions by eye against a known reference, and measuring
-# sigma_round. Record results in the platform-review notes (apex-competitions-registry,
-# competitions/humanoid_parkour/HANDOFF.md) -- deliberately NOT in this public repo.
+# What this workflow is for: judging submissions by eye against a known reference and measuring
+# round variance. Record platform-review results in the private onboarding handoff.
 name: measure-baseline
 
 on:
   workflow_dispatch:
     inputs:
-      num_instances:
-        description: "Instances in the suite (must match fixtures/input.json)"
-        default: "24"
-      max_steps:
-        description: "Control-step cap per instance (input.schema.json maximum: 3000)"
-        default: "3000"
+      instances_per_event:
+        description: "Attempts of each Olympic discipline"
+        default: "4"
       seed:
         description: "Round seed: sets every instance's friction and wind"
         default: "1"
@@ -40,14 +36,14 @@ jobs:
 
       - name: Build the images under test
         run: |
-          docker build -q -f referee/Dockerfile -t hp-referee .
-          docker build -q -f player/Dockerfile  -t hp-player  .
+          docker build -q -f referee/Dockerfile -t olympics-referee .
+          docker build -q -f player/Dockerfile  -t olympics-player  .
 
       - name: Run the baseline through the full loop
         run: |
-          docker network create hpnet
-          docker run -d --name hp-p --network hpnet \
-            -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" hp-player
+          docker network create olympics-net
+          docker run -d --name olympics-player --network olympics-net \
+            -v "$PWD/baseline/baseline.onnx:/app/submission.onnx:ro" olympics-player
           # The referee runs as uid 1000 and writes result.json into this bind mount; on Linux
           # the runner user owns it, so it needs to be world-writable. macOS Docker Desktop
           # masks this, which is how it was missed the first time.
@@ -55,10 +51,10 @@ jobs:
           for i in $(seq 1 30); do
             curl -sf http://localhost:8000/health >/dev/null 2>&1 && break || sleep 2
           done
-          docker run --rm --network hpnet -v "$PWD/data:/data" \
-            -e MATCH_ID=measure -e SEED=${{ inputs.seed }} -e NUM_PLAYERS=1 -e PLAYER_URLS=http://hp-p:8000 \
-            -e CONFIG_JSON="{\"seed\":${{ inputs.seed }},\"num_instances\":${{ inputs.num_instances }},\"max_steps_per_episode\":${{ inputs.max_steps }},\"deadline_ms\":500}" \
-            hp-referee
+          docker run --rm --network olympics-net -v "$PWD/data:/data" \
+            -e MATCH_ID=measure -e SEED=${{ inputs.seed }} -e NUM_PLAYERS=1 -e PLAYER_URLS=http://olympics-player:8000 \
+            -e CONFIG_JSON="{\"seed\":${{ inputs.seed }},\"instances_per_event\":${{ inputs.instances_per_event }},\"deadline_ms\":500}" \
+            olympics-referee
 
       - name: Report
         run: |
@@ -71,8 +67,8 @@ jobs:
           print(f"baseline_raw_score: {r['raw_scores'][0]:.4f}")
           print('```\n')
           print(f"- exact: `{r['raw_scores'][0]!r}`")
-          print(f"- instances: {m['num_instances']}, completed: {m['num_completed']}")
-          print(f"- furthest: {m['furthest_m']} m")
+          print(f"- attempts: {m['num_instances']}, finished: {m['num_finished']}")
+          print(f"- event scores: {m['event_scores']}")
           print(f"- eval time: {m['eval_time_in_seconds']} s (referee timeout 900 s)")
           reasons = {}
           for i in m['instances']:
@@ -87,6 +83,6 @@ jobs:
             torch --extra-index-url https://download.pytorch.org/whl/cpu
           # The 15 MB cap is only defensible if a model that big still fits the referee's time
           # budget on the hardware the platform runs, not on a dev laptop. Fails loudly if not.
-          PYTHONPATH=. python tools/latency_probe.py | tee /tmp/latency.txt
+          PYTHONPATH=. python tools/latency_probe.py --instances 24 --max-steps 2650 --cap-mb 15 | tee /tmp/latency.txt
           { echo '### inference latency on this runner'; echo '```'; cat /tmp/latency.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           grep -q "NOT compute-bound" /tmp/latency.txt
