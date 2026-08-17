@@ -108,6 +108,18 @@ docker run --rm --network olympics-net -v /tmp/olympics-data:/data \
 jq '.raw_scores, .metadata.event_scores' /tmp/olympics-data/result.json
 ```
 
+## Example histories
+
+[`docs/example-histories/seed-1-baseline/`](docs/example-histories/seed-1-baseline/) contains a
+complete replayable 24-attempt seed-1 meet from the published baseline: four attempts of every
+event, with the exact friction, wind, geometry, actions, and poses recorded. It is intentionally a
+weak baseline, so its falls, fouls, and partial progress are useful renderer test cases too.
+
+```bash
+PYTHONPATH=. python tools/replay.py docs/example-histories/seed-1-baseline
+PYTHONPATH=. python tools/replay.py docs/example-histories/seed-1-baseline -i 4 --out /tmp/400m.mp4
+```
+
 ## Repository layout
 
 ```
