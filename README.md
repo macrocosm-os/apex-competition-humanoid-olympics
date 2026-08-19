@@ -35,10 +35,12 @@ an incomplete attempt remains below 0.25. Faster legal race finishes, higher cle
 longer valid horizontal jumps earn more. Limited progress credit remains useful for local training
 without outweighing a complete attempt.
 
-The v0.1 launch configuration is fixed: four attempts of every event, the same four balanced
+The launch configuration is fixed in shape: four attempts of every event, four balanced
 wind/friction strata, 8 m/s maximum wind, 500 ms per action, and a replay history recorded at
-stride 2. The platform seed is intentionally score-neutral at launch, so the meet can loop with
-a stable absolute baseline while the control frontier develops.
+stride 2. The conditions inside that shape follow the platform round seed -- the friction and wind
+strata are phase-shifted per round and per event, so a policy has to hold up across the band
+instead of at one memorised set of 24 operating points. A given seed reproduces its meet exactly,
+which is what keeps the incumbent's start-of-round re-score comparable to its challengers'.
 
 The round result is:
 

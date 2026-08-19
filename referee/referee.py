@@ -34,7 +34,8 @@ class OlympicsReferee(Referee):
         test_step_cap = int(cfg.get("test_step_cap", 0))
         # The release configuration is part of the score definition. Test-only
         # callers may reduce it under an explicit control-step cap, but a live
-        # round always evaluates the same 24 recorded attempts and conditions.
+        # round always evaluates the same 24 recorded attempts under the same
+        # stratification; only the conditions move, and they move with `seed`.
         if test_step_cap > 0:
             instances_per_event = int(cfg.get("instances_per_event", DEFAULT_INSTANCES_PER_EVENT))
             deadline_ms = int(cfg.get("deadline_ms", DEFAULT_DEADLINE_MS))
