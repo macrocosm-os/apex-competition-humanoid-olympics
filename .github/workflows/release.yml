@@ -123,7 +123,7 @@ jobs:
       - name: Hard event rules reject invalid traversals
         run: PYTHONPATH=. python .github/scripts/check_event_rules.py
 
-      - name: The baseline scores above zero (it seeds the leaderboard)
+      - name: The baseline still scores above zero (integration reference, not the entry bar)
         run: |
           PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 1 \
             --max-steps 300 -q --json /tmp/baseline.json

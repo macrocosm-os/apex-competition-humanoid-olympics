@@ -12,17 +12,15 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# DIGESTS BELOW ARE STALE: they are the v0.1.0 build, kept only so this file stays syncable until
-# the v0.2.0 release run finishes. 0.2.0 changes the referee (env/sim.py), and changes it in a way
-# that alters CONTACT PHYSICS rather than just a constant -- a 0.2.0 spec pointing at a 0.1.0
-# referee would silently evaluate with three of the four friction strata still clamped to mu 1.0,
-# which is the exact defect this release exists to fix and is invisible in the resulting scores.
-# Re-pin both from the release run's job summary, resolve them from ghcr by tag, and verify with
-# `cosign verify` (issuer = the GitHub OIDC endpoint, cert SAN = this file's `cosign_identity` at
-# refs/tags/v0.2.0). The platform pins by digest and rejects tags.
+# Pinned from the v0.2.0 release run (Actions run 32202789286). Both digests were resolved from
+# ghcr by tag and verified with `cosign verify`: signature present, issuer is the GitHub OIDC
+# endpoint, and the cert SAN is this file's `cosign_identity` at refs/tags/v0.2.0. The signing
+# workflow sha is 50f4760a4db4c6e30fbd980575df9f8a1f3505fb, which is v0.2.0^{commit} -- so these
+# images carry the contact-priority fix rather than a stale tree. Unlike 0.1.0, these are the FINAL
+# tag's own digests, not a candidate's. The platform pins by digest and rejects tags.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
-  digest: sha256:92e6aab7bfc511f1e6d107432cf1e368962c6fc716e1abd30ff8fbc1debea8a0
+  digest: sha256:c74f694e5998d311d50ae337d6c30aea90f763b3844ced37bbb950436a7a6ac6
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
@@ -41,13 +39,21 @@ input_schema:
   $ref: ./input.schema.json
 
 defaults:
-  # Re-measured under 0.2.0's contact physics. 0.1.0's 0.032985375 was taken with three of the four
-  # friction strata clamped to mu 1.0, so it described a grippier meet than the spec advertised.
-  # Unlike humanoid_parkour, this is the MEASURED baseline rather than 0.0, so it is the platform's
-  # entry bar and a physics change has to move it: 0.032985375 -> 0.032546083 (-1.33%). Still exact
-  # across seeds (the launch meet is seed-neutral), so there is no standard error to stall round 1.
-  baseline_score: 0.032546083
-  baseline_raw_score: 0.032546083
+  baseline_score: 0.0
+  # 0.0 BY CHOICE, matching humanoid_parkour, not a measurement. This is the platform's ENTRY BAR
+  # (score_to_beat = max(this, top_raw) * (1 + SCORE_THRESHOLD)) and it binds until first blood.
+  #
+  # 0.1.0 pinned the measured 0.032985375, which turned out to be the wrong thing to pin twice over.
+  # It was measured with three of the four friction strata clamped to mu 1.0, so it described a
+  # grippier meet than the spec advertised. And a measured bar has to be RE-measured on every
+  # physics change, on a native-amd64 runner inside the real referee image -- host and image
+  # disagree by ~0.08% against a 1% takeover margin, so a convenient local number is not a
+  # substitute. That made a 20-seed calibration a blocking gate on every release.
+  #
+  # Pinning 0.0 removes the gate and the class of error with it: the bar can no longer sit above the
+  # true baseline and stall a round forever, and it cannot silently encode stale physics. Cost:
+  # round 1 goes to anything scoring above zero, which self-corrects on the first real athlete.
+  baseline_raw_score: 0.0
   round_length_in_days: 2
   submission_reveal_days: 5
   lower_is_better: false
@@ -69,7 +75,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
-    digest: sha256:2197d8bfd18196ad74e93a902860c4590caeefafcaa37c38af48a98edccc532b
+    digest: sha256:2de29982e307d8a791a2442de1f7c261ffbc0b0c6f2a5bc507218fc771010b5d
   timeout_s: 900
 
 signature:

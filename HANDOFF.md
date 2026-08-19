@@ -1,7 +1,8 @@
 # Competition onboarding manifest: `humanoid_olympics`
 
-This document records the signed candidate image digests, native-amd64 calibration, and final
-release verification. It is not an onboarding request by itself.
+This document records the signed release image digests and release verification. It is not an
+onboarding request by itself. As of 0.2.0 there is no calibration gate: `baseline_raw_score` is
+0.0 by choice, so no measured baseline has to be certified before a release.
 
 ## 1. Goal statement & alignment plan
 
@@ -35,7 +36,7 @@ release verification. It is not an onboarding request by itself.
 | Round generation | n/a; one platform master seed is sufficient | complete |
 | Cosign identity + issuer | `.github/workflows/release.yml`; GitHub Actions OIDC | candidate and final workflows verify it |
 | Input schema + fixture | `input.schema.json`, `fixtures/input.json` | complete |
-| Baseline integration artifact | `baseline/baseline.onnx` | pinned; native-amd64 20-seed calibration passed (run `32037213638`, artifact `9291517227`) |
+| Baseline integration artifact | `baseline/baseline.onnx` | pinned; smoke-tested in release CI. No calibration gate as of 0.2.0 — `baseline_raw_score` is 0.0 by choice, so there is no measured number to certify |
 | Miner documentation | `README.md`, `docs/design.md` | complete |
 | Full end-to-end evidence | release CI two-container job + candidate calibration artifact | candidate [run 32039171270](https://github.com/macrocosm-os/apex-competition-humanoid-olympics/actions/runs/32039171270) and final [run 32039533955](https://github.com/macrocosm-os/apex-competition-humanoid-olympics/actions/runs/32039533955) passed all jobs |
 
@@ -60,7 +61,7 @@ Score-affecting pins already committed:
 | Resources | 2 CPU, 2 GiB, 0 GPU | Native evidence peaked at 927.8 MiB, leaving >50% headroom; this ceiling is exercised in release CI. |
 | Timeouts | player 1,200 s; referee 900 s; internal scheduler 840 s | Leaves persistence time after a full recorded 24-attempt meet. |
 | Action deadline | 500 ms | Caps inference latency while remaining realistic for compact recurrent CPU ONNX. |
-| Baseline score | 0.032985375 native-amd64 mean | Passed the 20-seed stability gate before the candidate tag. |
+| Baseline score | 0.0 by choice | The platform entry bar, not a measurement. See `spec.yaml` `defaults` for why 0.1.0's measured 0.032985375 was withdrawn. |
 | Submission fee | propose USD 1 in TAO | Discourages low-effort repetition and approximately covers simulator cost. |
 | Incentive weight | propose 0.03 | Middle of the normal 0.02–0.05 range, subject to Macrocosmos. |
 
@@ -72,17 +73,28 @@ and an independently seeded untrained ONNX reference across 20 master seeds in t
 two-container native-amd64 setup. It records per-seed raw/event scores, standard deviation,
 ordering, peak container memory, and wall time in `baseline-calibration-native-amd64`.
 
-Before onboarding, fill this section from that artifact:
+The figures below were measured under 0.1.0, **before** the contact-priority fix, and are retained
+as resource and wall-time evidence only. Their score components are superseded: 0.1.0 ran 18 of the
+24 attempts with friction clamped to mu 1.0, so every score here describes a grippier meet than
+0.2.0 evaluates. They are NOT a calibration of the current physics, and nothing depends on them
+being one — `baseline_raw_score` is 0.0 by choice as of 0.2.0.
 
 - Evidence: [native calibration run 32037213638](https://github.com/macrocosm-os/apex-competition-humanoid-olympics/actions/runs/32037213638), artifact `baseline-calibration-native-amd64` (`9291517227`).
-- Baseline mean raw score: `0.032985375`; all 20 raw scores were exactly that value.
-- Baseline sample standard deviation across 20 seeds: `0.0`; quarter-margin `0.0000824634375`; stability gate passed.
-- Event means: 100 m `0.040466`, 400 m `0.004020`, hurdles `0.032187`, high `0`, long `0.121240`, triple `0`.
-- Baseline ranked above both deliberately weaker references on every seed: baseline `0.032985375`, static `0.002628292`, random `0.002610667`.
-- Full recorded baseline wall time: mean `65.705 s`, max `66.2 s`; peak measured container memory `927.8 MiB`, below half of the declared 2 GiB envelope.
+- Superseded score components (0.1.0 physics): baseline mean raw `0.032985375`, identical on all 20
+  seeds, sample standard deviation `0.0`; event means 100 m `0.040466`, 400 m `0.004020`, hurdles
+  `0.032187`, high `0`, long `0.121240`, triple `0`; baseline ranked above both weaker references on
+  every seed (static `0.002628292`, random `0.002610667`).
+- Still current — resources are unchanged by the fix, which alters contact parameters rather than
+  step counts: full recorded baseline wall time mean `65.705 s`, max `66.2 s`; peak measured
+  container memory `927.8 MiB`, below half of the declared 2 GiB envelope.
+- Cross-checked on staging under 0.1.0: three submissions of a 14.46 MiB near-cap artifact scored
+  `0.032985375` with referee-reported eval times of 354.1/356.4/353.4 s, reproducing the native
+  event means digit for digit. Stage is ~5.4x slower than native amd64, so a policy running every
+  attempt to its step cap projects to ~632 s against the referee's 840 s internal budget.
 
-If the variance check fails, the fixed launch configuration is not submitted; its condition mix or
-attempt count is revised in a new spec version instead.
+A seed-stability gate is no longer meaningful here: the launch meet is seed-neutral by construction,
+so 20 seeds return one value and the variance check can only ever pass. If the condition mix or
+attempt count changes, that is a new spec version with its own sizing evidence.
 
 ## 5. Threat-model questionnaire
 
@@ -132,7 +144,9 @@ verifies them under the declared 2 CPU / 2 GiB limit.
 
 ## 7. Candidate-to-onboarding procedure
 
-1. Push this source and tag `calibration-<candidate>` to run the native-amd64 calibration suite.
+1. Push this source. There is no calibration tag to cut: `baseline_raw_score` is 0.0 by choice, so
+   nothing about the release depends on re-measuring the baseline. `measure-baseline.yml` remains
+   available via `workflow_dispatch` for resource and wall-time evidence, but it gates nothing.
 2. If the sizing and resource checks pass, tag `v0.1.0-candidate.1`; release CI publishes and
    keyless-signs both images, then verifies the signature against the identity/issuer in `spec.yaml`.
 3. Commit the resulting candidate digests into `spec.yaml` and this handoff, repeat preflight,
