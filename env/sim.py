@@ -154,6 +154,21 @@ def _shared_model(layout: EventLayout) -> tuple[mujoco.MjModel, list[int]]:
         _MODEL = model
         _MODEL_KEY = key
         _COURSE_GEOMS = [model.geom(f"{GEOM_PREFIX}{i}").id for i in range(len(layout.surfaces))]
+        # Make the course's friction authoritative for foot contacts. Writing geom_friction is
+        # necessary but not sufficient: MuJoCo mixes contact parameters from BOTH geoms in a pair,
+        # and for friction the mix is the element-wise MAXIMUM whenever the two have equal
+        # priority. g1_12dof.xml declares no geom friction, so the robot's feet sit at MuJoCo's
+        # default of 1.0. Every stratum this meet draws below 1.0 was therefore taken from the
+        # foot, not the track: measured 18 of the 24 launch attempts solving at exactly 1.0000
+        # while the course asked for 0.52-0.98. Raising priority on the course side makes its
+        # contact parameters win outright, which is MuJoCo's documented mechanism for this case.
+        # Guarded by tests/test_friction_reaches_contacts.py, which asserts on the solved contact
+        # friction rather than on a score -- a score cannot distinguish a band that applied from
+        # one that was mixed away, which is exactly how this survived the 20-seed calibration.
+        #
+        # Constant per geom, so it belongs here; only geom_friction varies per instance.
+        for gid in _COURSE_GEOMS:
+            model.geom_priority[gid] = 1
     return _MODEL, _COURSE_GEOMS
 
 

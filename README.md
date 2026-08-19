@@ -66,6 +66,11 @@ are opaque recurrent memory, reset at the start of each event attempt. The obser
 proprioception, course-relative heading and cross-track error, a 6 m terrain scan, and overhead
 clearance. Friction and wind are not observation fields; a policy must react to their effects.
 
+Surface friction is authoritative for foot contacts as of 0.2.0. Through 0.1.0 the course geoms
+carried no `geom_priority`, so MuJoCo's element-wise maximum took the G1's default foot value of
+1.0 and three of the four strata solved at full grip regardless of the band. Policies trained
+against 0.1.0 have never met the slippery end of this course.
+
 The 400 m is a true circular 400 m route (radius approximately 63.66 m), not a scaled lap. Its
 progress follows accumulated forward route distance, so cornering is part of the task.
 

@@ -69,7 +69,19 @@ horizontal jumps are legal distance.
 Each launch round repeats the same public four-stratum friction/wind lattice, with opposing wind
 directions. This makes the absolute score stable enough for a 1% takeover margin while still
 requiring a controller to handle the full launch envelope. High-jump attempts cycle through 1.00,
-1.10, 1.20, and 1.30 m bar heights above the deck. The platform seed is retained in the request
+1.10, 1.20, and 1.30 m bar heights above the deck.
+
+The course's friction must be **authoritative for foot contacts**, and that is a property of the
+model rather than of the numbers written into it. MuJoCo mixes contact parameters from both geoms in
+a pair, and for friction the mix is the element-wise maximum whenever the two carry equal
+`geom_priority`. `g1_12dof.xml` declares no geom friction, so the robot's feet sit at MuJoCo's
+default of 1.0 — above most of the band this meet draws. Setting `geom_friction` on the course is
+therefore necessary but not sufficient: the course geoms also carry `geom_priority = 1` so their
+parameters win outright. Without it, 18 of the 24 launch attempts solve at exactly 1.0 while the
+course asks for 0.52–0.98, collapsing three of the four strata into one at full grip. This is
+asserted at contact level in `tests/test_friction_reaches_contacts.py`, deliberately not through a
+score: a score cannot distinguish a band that applied from one that was mixed away, which is how the
+defect passed 0.1.0's 20-seed calibration with a sample standard deviation of 0.0. The platform seed is retained in the request
 contract but is intentionally score-neutral in v0.1; a future version can introduce fresh
 conditions only after recalibrating its baseline.
 
