@@ -12,20 +12,16 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# STALE AS OF 0.3.0 -- DO NOT ONBOARD THESE. 0.3.0 widens the friction band's low end from mu 0.50
-# to 0.30 (env/course.py FRICTION_NOMINAL), which is a physics change, so the digests below still
-# describe 0.2.0 images and would evaluate the OLD band. Re-pin both from the v0.3.0 release run
-# and re-verify with `cosign verify` before this version is registered or activated.
-#
-# Pinned from the v0.2.0 release run (Actions run 32202789286). Both digests were resolved from
-# ghcr by tag and verified with `cosign verify`: signature present, issuer is the GitHub OIDC
-# endpoint, and the cert SAN is this file's `cosign_identity` at refs/tags/v0.2.0. The signing
-# workflow sha is 50f4760a4db4c6e30fbd980575df9f8a1f3505fb, which is v0.2.0^{commit} -- so these
-# images carry the contact-priority fix rather than a stale tree. Unlike 0.1.0, these are the FINAL
-# tag's own digests, not a candidate's. The platform pins by digest and rejects tags.
+# Pinned from the v0.3.0 release run (Actions run 32265839402), all four jobs green. Both digests
+# were verified with `cosign verify`: signature present, transparency-log entry verified, cert chain
+# verified against the trusted roots, issuer is the GitHub OIDC endpoint, and the cert SAN is this
+# file's `cosign_identity` at refs/tags/v0.3.0. The signing workflow sha is
+# 047b7bd3b32aa42f42677e6a2f1b95015e4e8253, which is v0.3.0^{commit} -- so these images carry the
+# widened friction band (mu 0.30 floor) rather than 0.2.0's (0.50, 1.25). As with 0.2.0 these are the
+# FINAL tag's own digests, not a candidate's. The platform pins by digest and rejects tags.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
-  digest: sha256:c74f694e5998d311d50ae337d6c30aea90f763b3844ced37bbb950436a7a6ac6
+  digest: sha256:8e6bd365c8409bd6c67e7b72cb3c49b540f959456622bddf7449efeecce44e22
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
@@ -80,7 +76,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
-    digest: sha256:2de29982e307d8a791a2442de1f7c261ffbc0b0c6f2a5bc507218fc771010b5d
+    digest: sha256:5a21986a215d3aef114866098cdad275f9d3f25c28ef79717dfe9f9471dc64b7
   timeout_s: 900
 
 signature:
