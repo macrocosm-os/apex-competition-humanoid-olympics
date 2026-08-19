@@ -62,7 +62,13 @@ TRIPLE_HOP_START_M, TRIPLE_HOP_LENGTH_M = 14.0, 1.5
 TRIPLE_STEP_START_M, TRIPLE_STEP_LENGTH_M = 18.0, 1.5
 TRIPLE_LANDING_M = 25.0
 
-FRICTION_NOMINAL = (0.50, 1.25)
+# The low end is a real slip regime, not a merely-imperfect one: 0.30 is below the ~0.35 where a
+# foot can still push hard enough to sprint comfortably, so the bottom stratum asks a policy to
+# manage traction rather than assume it. Widening the band moves EVERY stratum, not just the last
+# one, because a stratum is a fraction of the band (see `nominal_mu`): the second and third strata
+# drop to ~0.80 and ~0.57 from ~0.90 and ~0.71. The +/-8% per-slab jitter is relative to the band
+# too, so it widens to +/-0.076.
+FRICTION_NOMINAL = (0.30, 1.25)
 COLOR = {
     "track": ".54 .57 .61 1",
     "hurdle": ".85 .26 .32 1",

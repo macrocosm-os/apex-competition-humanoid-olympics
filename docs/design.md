@@ -67,7 +67,22 @@ from 0.25 upward; quality within finished races is pace, high jump is selected b
 horizontal jumps are legal distance.
 
 Each launch round repeats the same public four-stratum friction/wind lattice, with opposing wind
-directions. This makes the absolute score stable enough for a 1% takeover margin while still
+directions.
+
+0.3.0 widens the friction band from `(0.50, 1.25)` to `(0.30, 1.25)`. The intent is a bottom stratum
+that is a genuine slip regime rather than a merely-imperfect surface. Two consequences are worth
+stating plainly, because neither is obvious from the one-line change:
+
+- A stratum is a fraction of the band, so **every** stratum moves, not only the last. Per event the
+  four nominal values go from roughly 1.08/0.90/0.71/0.52 to 1.04/0.80/0.57/0.33, and the relative
+  ±8% per-slab jitter widens from ±0.060 to ±0.076.
+- Solvability at the low end is a **hypothesis, not a measurement**. This course has no
+  parkour-style on-ramp imposing a hard mu floor, so nothing becomes trivially impossible — but a
+  long-jump take-off converts a fast approach into vertical impulse through one foot, and at mu
+  ~0.38 that is the marginal case. The 0.2.0 note that "there is no trained Olympics policy yet, so
+  the band's effect on a COMPETENT controller is unmeasured" applies with more force here. Probe
+  jump solvability across the new low strata before release, and expect low-stratum jump attempts to
+  fall back to partial progress credit rather than scoring a legal landing. This makes the absolute score stable enough for a 1% takeover margin while still
 requiring a controller to handle the full launch envelope. High-jump attempts cycle through 1.00,
 1.10, 1.20, and 1.30 m bar heights above the deck.
 
