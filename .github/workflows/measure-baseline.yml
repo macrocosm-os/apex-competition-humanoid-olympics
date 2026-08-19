@@ -11,9 +11,11 @@
 # The resulting mean, variance, ordering, resource, and wall-time evidence is recorded in HANDOFF.
 name: measure-baseline
 
+# Dispatch-only as of 0.2.0. This measured `baseline_raw_score`, which is now 0.0 by choice, so
+# nothing in a release depends on it and no tag should start an hour of compute. Kept because the
+# resource and wall-time evidence it produces is still the only trustworthy source for the
+# `resources` and `timeout_s` blocks -- host-side numbers disagree with the image by ~0.08%.
 on:
-  push:
-    tags: ["calibration-*"]
   workflow_dispatch:
     inputs:
       instances_per_event:
