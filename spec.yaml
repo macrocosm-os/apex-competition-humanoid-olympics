@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.2.0
+version: 0.3.0
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,6 +12,11 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
+# STALE AS OF 0.3.0 -- DO NOT ONBOARD THESE. 0.3.0 widens the friction band's low end from mu 0.50
+# to 0.30 (env/course.py FRICTION_NOMINAL), which is a physics change, so the digests below still
+# describe 0.2.0 images and would evaluate the OLD band. Re-pin both from the v0.3.0 release run
+# and re-verify with `cosign verify` before this version is registered or activated.
+#
 # Pinned from the v0.2.0 release run (Actions run 32202789286). Both digests were resolved from
 # ghcr by tag and verified with `cosign verify`: signature present, issuer is the GitHub OIDC
 # endpoint, and the cert SAN is this file's `cosign_identity` at refs/tags/v0.2.0. The signing
