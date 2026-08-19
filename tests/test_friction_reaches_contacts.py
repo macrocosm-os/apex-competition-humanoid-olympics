@@ -6,7 +6,8 @@ when the two geoms have equal `geom_priority`. `g1_12dof.xml` sets no geom frict
 feet sit at MuJoCo's default of 1.0. Every stratum this meet asks for below 1.0 was therefore taken
 from the foot rather than the track: 18 of the 24 launch attempts solved at exactly 1.0000 while the
 course asked for 0.52-0.98, so three of the four condition strata per event were duplicates of each
-other at full grip.
+other at full grip. That 0.52-0.98 is what 0.2.0's `(0.50, 1.25)` band asked for; 0.3.0 widened the
+band to `(0.30, 1.25)`, which only widens the gap this guards against.
 
 These assert at CONTACT level on purpose. A score-based check cannot tell "friction was applied"
 apart from "friction was ignored and the policy happens to be robust" -- which is exactly how this

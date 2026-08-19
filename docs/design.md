@@ -93,7 +93,8 @@ a pair, and for friction the mix is the element-wise maximum whenever the two ca
 default of 1.0 — above most of the band this meet draws. Setting `geom_friction` on the course is
 therefore necessary but not sufficient: the course geoms also carry `geom_priority = 1` so their
 parameters win outright. Without it, 18 of the 24 launch attempts solve at exactly 1.0 while the
-course asks for 0.52–0.98, collapsing three of the four strata into one at full grip. This is
+course asks for less — measured as 0.52–0.98 under 0.2.0's `(0.50, 1.25)` band, and further below
+1.0 under 0.3.0's `(0.30, 1.25)` — collapsing three of the four strata into one at full grip. This is
 asserted at contact level in `tests/test_friction_reaches_contacts.py`, deliberately not through a
 score: a score cannot distinguish a band that applied from one that was mixed away, which is how the
 defect passed 0.1.0's 20-seed calibration with a sample standard deviation of 0.0. The platform seed is retained in the request

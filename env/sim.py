@@ -160,7 +160,8 @@ def _shared_model(layout: EventLayout) -> tuple[mujoco.MjModel, list[int]]:
         # priority. g1_12dof.xml declares no geom friction, so the robot's feet sit at MuJoCo's
         # default of 1.0. Every stratum this meet draws below 1.0 was therefore taken from the
         # foot, not the track: measured 18 of the 24 launch attempts solving at exactly 1.0000
-        # while the course asked for 0.52-0.98. Raising priority on the course side makes its
+        # while the course asked for 0.52-0.98 (that figure is 0.2.0's (0.50, 1.25) band; 0.3.0
+        # widened it to (0.30, 1.25), so the gap is larger). Raising priority on the course side makes its
         # contact parameters win outright, which is MuJoCo's documented mechanism for this case.
         # Guarded by tests/test_friction_reaches_contacts.py, which asserts on the solved contact
         # friction rather than on a score -- a score cannot distinguish a band that applied from
