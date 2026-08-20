@@ -97,14 +97,30 @@ course asks for less — measured as 0.52–0.98 under 0.2.0's `(0.50, 1.25)` ba
 1.0 under 0.3.0's `(0.30, 1.25)` — collapsing three of the four strata into one at full grip. This is
 asserted at contact level in `tests/test_friction_reaches_contacts.py`, deliberately not through a
 score: a score cannot distinguish a band that applied from one that was mixed away, which is how the
-defect passed 0.1.0's 20-seed calibration with a sample standard deviation of 0.0. The platform seed is retained in the request
-contract but is intentionally score-neutral in v0.1; a future version can introduce fresh
-conditions only after recalibrating its baseline.
+defect passed 0.1.0's 20-seed calibration with a sample standard deviation of 0.0. The platform seed drives the conditions as of 0.4.0: the
+friction and wind strata are phase-shifted per round and per event, so the meet's envelope is
+constant while its operating points move. The seed itself is emitted on no miner-visible surface —
+not `player.reset`, not the observation, not `result.json`, not the history files — which
+`tests/test_seed_is_not_disclosed.py` enforces by scanning each surface's serialized JSON for the
+value rather than for a field name. Because the realized conditions ARE reported, a guessed seed can
+still be confirmed against a closed round by re-deriving the meet from this public repo; the secrecy
+therefore rests on the platform drawing seeds unpredictably rather than from a round counter — a
+property this repo cannot enforce, since the seed to conditions mapping ships in a public image, and
+which is worth confirming with the platform before this activates. This is deliberately paired with a `baseline_raw_score`
+of 0.0 -- a measured baseline is not a well-defined quantity once conditions vary, and pinning one
+would put the entry bar above the true baseline in about half of all rounds.
 
-The launch configuration is fixed across rounds: four attempts per event, four public condition
-strata, 8 m/s maximum wind, 500 ms action deadline, and history stride 2. Accepting a different
-event count, wind range, or seed-dependent condition mix would change the score distribution and
-is a future versioned release.
+The meet's SHAPE is fixed across rounds: four attempts per event, four evenly spaced condition
+strata covering the full band, 8 m/s maximum wind, 500 ms action deadline, and history stride 2.
+`tests/test_round_conditions_vary.py` asserts the shape survives the phase shift -- even cyclic
+spacing of both strata, opposed wind pairs, an unmoved high-jump bar ladder, and exact
+reproducibility per seed. Changing the event count, the wind range, or the stratification itself
+would change the score distribution and is a future versioned release.
+
+The cost of per-round conditions is that absolute scores compare only within a round. On the
+baseline artifact the cross-round spread is CV ~1.1%, which is the same order as the 1% takeover
+threshold; the reason that is not decisive is that the incumbent is re-scored on the challenger's
+own round seed, so the condition draw is common-mode in the comparison that settles the round.
 
 The geometry and height band are implementation hypotheses until calibrated. Before the first
 release, run a solvability probe for high and triple jump, measure full-round standard deviation

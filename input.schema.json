@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "humanoid_olympics round input",
-  "description": "A balanced six-event Humanoid Olympics meet. Every evaluation contains the same number of attempts of each discipline and the same public, balanced launch conditions.",
+  "description": "A balanced six-event Humanoid Olympics meet. Every evaluation contains the same number of attempts of each discipline and the same public, balanced stratum structure; the conditions themselves are drawn from the round seed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["seed", "instances_per_event", "deadline_ms"],
@@ -9,7 +9,7 @@
     "seed": {
       "type": "integer",
       "minimum": 0,
-      "description": "Platform round identifier. It is score-neutral in the fixed v0.1 launch meet."
+      "description": "Platform round identifier. It selects the round's conditions: the friction and wind strata are phase-shifted per round and per event, so no two rounds present the same 24 attempts. The meet's shape is unchanged by it -- same events, same attempt count, and four evenly spaced strata spanning the full envelope every round -- and a given seed reproduces its meet exactly."
     },
     "instances_per_event": {
       "type": "integer",

@@ -110,7 +110,7 @@ def test_contact_friction_is_not_pinned_to_the_default():
 
 
 def test_every_launch_stratum_reaches_the_solver():
-    """All 24 attempts of the fixed launch meet, not just a hand-built instance.
+    """All 24 attempts of a full meet, not just a hand-built instance.
 
     The original defect was stratum-dependent -- attempt 0 of each event happened to ask for mu
     above 1.0 and so appeared to work, while attempts 1-3 were clamped. A single-instance test
