@@ -86,11 +86,18 @@ class InstanceParams:
 
 def event_instances(instances_per_event: int, seed: int,
                     wind_max: float = WIND_MAX_MS) -> list[InstanceParams]:
-    """The fixed launch meet: each discipline gets the same public trial set.
+    """One round's meet: each discipline gets the same balanced trial set.
 
-    ``seed`` remains part of the platform request contract, but v0.1 deliberately
-    makes it score-neutral.  Repeating this four-stratum meet is how we retain a
-    stable cross-round baseline while the hard, public control problem matures.
+    ``seed`` is the platform round identifier and it now moves the conditions.
+    Every round still runs the same SHAPE of meet -- the same events, the same
+    attempt count, and the same four evenly spaced friction/wind strata spanning
+    the full envelope -- but the stratum phase is drawn per round, so no two
+    rounds present the same 24 attempts.  A policy therefore has to hold up
+    across the band rather than at 24 memorised operating points.
+
+    Determinism is per seed, not per round-number: the same seed reproduces its
+    meet exactly, which is what keeps the incumbent's start-of-round re-score
+    like-for-like against the challengers it is being compared to.
     """
     if instances_per_event < 1:
         raise ValueError("instances_per_event must be >= 1")
@@ -100,16 +107,20 @@ def event_instances(instances_per_event: int, seed: int,
 
 def instance_spec(event: str, attempt: int, seed: int, wind_max: float = WIND_MAX_MS,
                   attempts: int = 4) -> InstanceParams:
-    """One fixed, deterministically stratified condition for a launch attempt."""
+    """One deterministically stratified condition, drawn for this round's seed."""
     if event not in EVENTS:
         raise ValueError(f"unknown Olympic event {event!r}")
     event_index = EVENTS.index(event)
     if not 0 <= attempt < attempts:
         raise ValueError(f"attempt must be in [0, {attempts}), got {attempt}")
-    # The four fixed strata cover the condition envelope in every round.  Seeded
-    # geometry would make the absolute raw score move between rounds, invalidating
-    # the launch baseline's 1% takeover interpretation.
-    rng = np.random.default_rng([event_index, 0x0A11])
+    # Non-negative and bounded: the platform seed reaches us straight off the request, and a
+    # negative one would fault np.random inside the referee rather than at the schema edge.
+    round_key = int(seed) % (1 << 63)
+    # The stratum PHASE is per round and per event; the stratification is not. Attempts stay
+    # 1/attempts apart across the whole envelope, so every round is an equally broad sweep of the
+    # friction band and the wind range -- what moves is where in the band each attempt lands.
+    # Mixing the round key per event also keeps the six disciplines from shifting in lockstep.
+    rng = np.random.default_rng([event_index, round_key, 0x0A11])
     phase = float(rng.uniform(0.0, 1.0))
     friction = ((attempt + phase) / attempts) % 1.0
     wind_speed = wind_max * (((attempt + 0.5 + phase) / attempts) % 1.0)
@@ -117,8 +128,12 @@ def instance_spec(event: str, attempt: int, seed: int, wind_max: float = WIND_MA
                 (attempt % 2) * math.pi) % (2.0 * math.pi)
     challenge: dict[str, float] = {}
     if event == "high_jump":
+        # The bar ladder stays fixed across rounds. It is the event's published difficulty scale,
+        # not a condition: a round that happened to draw four low bars would not be the same test.
         challenge["bar_height_m"] = HIGH_JUMP_BARS_M[attempt % len(HIGH_JUMP_BARS_M)]
-    episode_rng = np.random.default_rng([event_index, attempt, 0x5151])
+    # Per-round too, so the within-stratum friction jitter and the reset perturbation move with
+    # the meet instead of replaying one fixed set of 24 starts.
+    episode_rng = np.random.default_rng([event_index, attempt, round_key, 0x5151])
     return InstanceParams(event=event, attempt=attempt, seed=int(episode_rng.integers(1 << 31)),
                           friction_level=friction,
                           wind_speed=wind_speed, wind_dir=wind_dir, challenge=challenge)
