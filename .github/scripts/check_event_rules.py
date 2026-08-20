@@ -18,7 +18,7 @@ from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHTS_M, LONG_LANDING_M, LONG
                         TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRIPLE_LANDING_M,
                         TRIPLE_TAKEOFF_M, build_event)
 from env.sim import (HIGH_CLEARANCE_MARGIN_M, HIGH_LANDING_OFFSET_M, MIN_AIRBORNE_STEPS,
-                     MIN_SUPPORT_STEPS, PLINTH_TOP, _scene_xml)
+                     MIN_SUPPORT_STEPS, PLINTH_TOP, WIND_MAX_MS, _scene_xml)
 
 
 def sim(event: str) -> OlympicsSim:
@@ -43,12 +43,27 @@ assert math.isclose(board.x - board.hx, LONG_TAKEOFF_M - TAKEOFF_BOARD_BEFORE_M)
 assert math.isclose(board.x + board.hx, LONG_TAKEOFF_M + TAKEOFF_BOARD_AFTER_M)
 assert 'contype="0" conaffinity="0"' in _scene_xml(long_layout)
 
-# v0.1 deliberately loops one balanced public meet.  This makes an absolute
-# baseline comparable across rounds rather than moving it with private seed draws.
-assert event_instances(4, 1) == event_instances(4, 20)
+# 0.4.0 draws the conditions from the round seed, so the meet must MOVE between rounds and
+# reproduce exactly within one.  The stratification must survive the phase shift: four evenly
+# spaced friction and wind strata spanning the full envelope, every round.
+assert event_instances(4, 1) == event_instances(4, 1)
+assert event_instances(4, 1) != event_instances(4, 20)
 for event in ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump"):
     for attempt in range(4):
-        assert instance_spec(event, attempt, seed=1) == instance_spec(event, attempt, seed=20)
+        assert instance_spec(event, attempt, seed=1) == instance_spec(event, attempt, seed=1)
+        assert instance_spec(event, attempt, seed=1) != instance_spec(event, attempt, seed=20)
+    for seed in (1, 20, 987654321):
+        specs = [instance_spec(event, attempt, seed=seed) for attempt in range(4)]
+        # The high-jump bar ladder is the published difficulty scale, not a condition.
+        assert [s.challenge for s in specs] == [instance_spec(event, a, seed=1).challenge
+                                                for a in range(4)]
+        for levels in ([s.friction_level for s in specs],
+                       [s.wind_speed / WIND_MAX_MS for s in specs]):
+            assert len(set(levels)) == 4, (event, seed, levels)
+            assert all(0.0 <= level < 1.0 for level in levels), (event, seed, levels)
+            ordered = sorted(levels)
+            gaps = [b - a for a, b in zip(ordered, ordered[1:])] + [1.0 - ordered[-1] + ordered[0]]
+            assert all(abs(gap - 0.25) < 1e-9 for gap in gaps), (event, seed, levels)
 
 # Only a foot contact on a walkable surface's top, inside its footprint, can
 # become support. A vertical side scrape and an edge contact cannot unlock a phase.
