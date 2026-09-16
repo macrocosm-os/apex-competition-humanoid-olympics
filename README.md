@@ -57,16 +57,32 @@ submissions.
 Submit one ONNX model, at most 15 MB, with exactly:
 
 ```
-inputs   obs       float32 [batch, 104]
-         state_in  float32 [batch, 256]
-outputs  action    float32 [batch, 12]
-         state_out float32 [batch, 256]
+inputs   obs        float32 [batch, 104]
+         state_in   float32 [batch, 256]
+         event_type float32 [batch, 6]    OPTIONAL
+outputs  action     float32 [batch, 12]
+         state_out  float32 [batch, 256]
 ```
 
 `action` is a vector of joint-position-target offsets, not torques. `state_in` and `state_out`
 are opaque recurrent memory, reset at the start of each event attempt. The observation includes
-proprioception, course-relative heading and cross-track error, a 6 m terrain scan, and overhead
-clearance. Friction and wind are not observation fields; a policy must react to their effects.
+proprioception, course-relative heading and cross-track error, a 6 m terrain scan, and seven
+forward barrier channels. Friction and wind are not observation fields; a policy must react to
+their effects.
+
+`event_type` is new in 0.5.0 and is **optional**: declare it as a third input and you receive a
+one-hot over `(sprint_100, sprint_400, hurdles_100, high_jump, long_jump, triple_jump)`, constant
+for the attempt. Leave it out and nothing changes — two-input policies load and score exactly as
+before, so no resubmission is required. Build one either way with
+`python tools/make_test_policy.py --event-input`.
+
+The seven forward channels changed meaning in 0.5.0. They were upward rays from just above the
+pelvis, reporting overhead clearance; they now report the height of the tallest barrier over each
+0.67 m bin out to 4.5 m ahead, pelvis-relative and on the same scale as the terrain scan — clear
+track reads like the ground beneath it, a hurdle reads its own top. Through 0.4.0 the six shortest
+hurdles (0.55–0.80 m) sat below the ray origin and appeared on no channel at all, which made the
+first 60.9 m of a hurdles race identical to a sprint. They are all visible now, from at least
+4.5 m out.
 
 Surface friction is authoritative for foot contacts as of 0.2.0. Through 0.1.0 the course geoms
 carried no `geom_priority`, so MuJoCo's element-wise maximum took the G1's default foot value of

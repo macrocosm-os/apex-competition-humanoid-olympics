@@ -19,6 +19,7 @@ ASSETS = pathlib.Path(__file__).parent / "assets"
 
 ACT_DIM = 12
 STATE_DIM = 256
+EVENT_DIM = len(EVENTS)
 SCAN_NX, SCAN_NY = 9, 5
 OVERHEAD_N = 7
 OBS_DIM = 52 + SCAN_NX * SCAN_NY + OVERHEAD_N
@@ -29,6 +30,23 @@ SCAN_X = np.linspace(-0.4, 6.0, SCAN_NX)
 SCAN_Y = np.linspace(-0.7, 0.7, SCAN_NY)
 OVERHEAD_X = np.linspace(0.0, 4.0, OVERHEAD_N)
 SCAN_CLIP = 2.0
+
+# The seven forward channels report the tallest BARRIER over a bin, not the clearance above the
+# pelvis. Through 0.4.0 they were single upward rays cast from `pz + 0.05`, which made any barrier
+# topping out below the pelvis invisible: six of the ten hurdles (0.55-0.80 m, tops 1.35-1.60 m
+# against a 1.643 m ray origin) returned nothing on any of the 104 channels, so the first 60.9 m of
+# a hurdles race was byte-identical to a plain sprint. Hurdles are `walkable=False`, so the
+# downward terrain scan cannot see them either -- it masks WORLD_GROUP alone, and must keep doing
+# so, because `_ray_down` also feeds the FALL_CLEARANCE gate.
+#
+# A bin is sampled rather than point-probed for the same reason a thin obstacle defeats a ray
+# lattice: a hurdle is 0.24 m thick against a 0.667 m channel spacing, so seven point rays missed
+# it roughly two thirds of the time and a "visible" hurdle arrived as a 0.2 m flicker. Four
+# sub-samples put the spacing at 0.167 m, below the thinnest barrier in the meet.
+OVERHEAD_BIN = float(OVERHEAD_X[1] - OVERHEAD_X[0])
+OVERHEAD_SUBSAMPLES = 4
+OVERHEAD_DX = (OVERHEAD_X[:, None] +
+               np.linspace(0.0, OVERHEAD_BIN, OVERHEAD_SUBSAMPLES, endpoint=False)[None, :])
 
 PHYS_DT = 0.002
 FRAME_SKIP = 10
@@ -56,6 +74,20 @@ HIGH_LANDING_OFFSET_M = 0.75
 SUPPORT_TOP_TOLERANCE_M = 0.06
 SUPPORT_NORMAL_Z_MIN = 0.65
 MIN_SUPPORT_IMPULSE_NS = 0.50
+
+
+def event_one_hot(event: str) -> np.ndarray:
+    """The optional `event_type` policy input: a one-hot over :data:`EVENTS`.
+
+    The referee sends the event NAME and the player builds this, so the index order is the
+    contract between them. `player/launch.py` repeats the order because the player image does
+    not ship `env/`; `tests/test_event_type_input.py` pins the two together.
+    """
+    if event not in EVENTS:
+        raise ValueError(f"unknown Olympic event {event!r}")
+    out = np.zeros((1, len(EVENTS)), np.float32)
+    out[0, EVENTS.index(event)] = 1.0
+    return out
 
 
 class InvalidAction(ValueError):
@@ -225,9 +257,11 @@ class OlympicsSim:
                 self._obstacle_geom_ids.setdefault(surface.kind, set()).add(geoms[i])
         self._ray_mask = np.zeros(6, np.uint8)
         self._ray_mask[WORLD_GROUP] = 1
-        self._up_mask = np.zeros(6, np.uint8)
-        self._up_mask[WORLD_GROUP] = 1
-        self._up_mask[OVERHEAD_GROUP] = 1
+        # Barriers only: the terrain groups a forward probe must see, including the
+        # non-walkable hurdles and high-jump bar that `_ray_mask` deliberately omits.
+        self._barrier_mask = np.zeros(6, np.uint8)
+        self._barrier_mask[WORLD_GROUP] = 1
+        self._barrier_mask[OVERHEAD_GROUP] = 1
         self._geomid = np.zeros(1, np.int32)
         self._action = np.zeros(ACT_DIM)
         self.steps = 0
@@ -648,10 +682,11 @@ class OlympicsSim:
                           np.array([0.0, 0.0, -1.0]), self._ray_mask, 1, -1, self._geomid)
         return z_from - d if d >= 0 else -SCAN_CLIP
 
-    def _ray_up(self, x: float, y: float, z_from: float) -> float:
+    def _ray_barrier(self, x: float, y: float, z_from: float) -> float:
+        """Top height of whatever stands at ``(x, y)`` -- barriers included."""
         d = mujoco.mj_ray(self.model, self.data, np.array([x, y, z_from]),
-                          np.array([0.0, 0.0, 1.0]), self._up_mask, 1, -1, self._geomid)
-        return SCAN_CLIP if d < 0 else min(d, SCAN_CLIP)
+                          np.array([0.0, 0.0, -1.0]), self._barrier_mask, 1, -1, self._geomid)
+        return z_from - d if d >= 0 else -SCAN_CLIP
 
     def _obs(self) -> np.ndarray:
         d, yaw = self.data, self._yaw()
@@ -671,7 +706,11 @@ class OlympicsSim:
                 scan[k] = self._ray_down(wx, wy, pz + RAY_FROM_ABOVE) - pz
                 k += 1
         np.clip(scan, -SCAN_CLIP, SCAN_CLIP, out=scan)
-        over = np.array([self._ray_up(px + c * dx, py + s * dx, pz + 0.05) for dx in OVERHEAD_X])
+        # Tallest barrier per forward bin, pelvis-relative and on the same scale as `scan`:
+        # clear track reads like the ground under it, a hurdle reads its own top.
+        over = np.array([max(self._ray_barrier(px + c * dx, py + s * dx, pz + RAY_FROM_ABOVE)
+                             for dx in row) for row in OVERHEAD_DX]) - pz
+        np.clip(over, -SCAN_CLIP, SCAN_CLIP, out=over)
         ground = self._ray_down(px, py, pz + RAY_FROM_ABOVE)
         phase = (self.steps * PHYS_DT * FRAME_SKIP % GAIT_PERIOD) / GAIT_PERIOD
         return np.concatenate([

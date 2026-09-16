@@ -38,6 +38,47 @@ The observation stays 104 floats so the inherited ONNX interface remains valid. 
 lateral fields are now route-relative, and the height/overhead scan reaches 6 m ahead rather than
 the previous 1.6 m horizon.
 
+### Barriers must be visible (0.5.0)
+
+A meet that ends an attempt on contact has to let the policy see what it is about to hit. Through
+0.4.0 it did not. Hurdles and the high-jump bar are `walkable=False` so they stay out of the
+downward terrain scan — that mask is `WORLD_GROUP` alone and must remain so, because `_ray_down`
+also feeds the `FALL_CLEARANCE` gate. The seven forward channels were meant to cover them, but
+they were single upward rays cast from `pelvis + 0.05` (1.643 m at reset), and six of the ten
+hurdles top out between 1.35 m and 1.60 m. Those six returned nothing on any of the 104 channels:
+measured, `hurdles_100` was byte-identical to `sprint_100` for the first 60.9 m of the race, and
+the four taller hurdles arrived as 0.2 m flickers because seven point rays sample every 0.667 m
+against a 0.24 m obstacle.
+
+The channels now report the tallest barrier over a bin, pelvis-relative and on the terrain scan's
+scale, sampled four times per bin so the spacing (0.167 m) is finer than the thinnest barrier in
+the meet. All ten hurdles are visible from at least 4.5 m out and stay visible through the
+approach. `tests/test_barriers_are_visible.py` asserts this at the observation level rather than
+through a score, for the reason the friction test gives: a score cannot tell a barrier a policy
+could not see from one it saw and failed to clear.
+
+This makes the hurdles harder to blame and easier to solve, so expect the hurdles leaderboard to
+reshuffle on the first round after activation. Cost is 21 extra ray casts per observation, about
+0.04 ms per control step, or 1.6 s across a 40,000-call meet against the referee's 840 s budget.
+
+### Telling a policy its discipline (0.5.0)
+
+Five of the six events were already identifiable from the observation's `remaining / 10` channel
+at the first step (400 m reads 40.0, the sprints 10.2, triple jump 2.7, long jump 2.3, high jump
+1.4). `sprint_100` and `hurdles_100` share a start, a finish and a lane, so they separate only
+once a barrier comes into range — about 9 m in, even with the sensing fixed.
+
+`event_type` closes that gap explicitly rather than leaving the identity smuggled through a
+distance channel, where moving a finish line would silently shift it under every trained policy.
+The referee sends the event NAME in `player.reset`'s config and the player builds the one-hot, so
+the index order is a contract between the two; `player/launch.py` repeats the order because the
+player image does not ship `env/`, and `tests/test_event_type_input.py` pins them together.
+
+It is optional in the load check, not merely tolerated: a two-input policy is the entire live
+leaderboard and keeps scoring unchanged. What the input deliberately does NOT carry is anything
+the round seed moves — friction, wind, and the bar height still have to be sensed, which is what
+`tests/test_seed_is_not_disclosed.py` now enforces on the reset config.
+
 ## Event rules
 
 - Sprint and hurdles end at their 100 m finish. The ten physical hurdles rise from 0.55 m to
@@ -100,7 +141,8 @@ score: a score cannot distinguish a band that applied from one that was mixed aw
 defect passed 0.1.0's 20-seed calibration with a sample standard deviation of 0.0. The platform seed drives the conditions as of 0.4.0: the
 friction and wind strata are phase-shifted per round and per event, so the meet's envelope is
 constant while its operating points move. The seed itself is emitted on no miner-visible surface —
-not `player.reset`, not the observation, not `result.json`, not the history files — which
+not `player.reset` (whose config carries the event name and nothing else), not the observation,
+not `result.json`, not the history files — which
 `tests/test_seed_is_not_disclosed.py` enforces by scanning each surface's serialized JSON for the
 value rather than for a field name. Because the realized conditions ARE reported, a guessed seed can
 still be confirmed against a closed round by re-deriving the meet from this public repo; the secrecy

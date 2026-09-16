@@ -13,6 +13,7 @@ import onnxruntime as ort
 
 from env import (EVENTS, OBS_DIM, STATE_DIM, OlympicsSim, event_instances, instance_score,
                  meet_score)
+from env.sim import event_one_hot
 from env.history import DEFAULT_STRIDE, InstanceRecorder, write_instance
 
 
@@ -20,9 +21,12 @@ def rollout(session, sim: OlympicsSim, obs: np.ndarray, step_cap: int | None,
             rec: InstanceRecorder | None = None) -> str:
     state = np.zeros((1, STATE_DIM), np.float32)
     names = [item.name for item in session.get_inputs()]
+    # Mirror the player: a third declared input is the event one-hot, held for the attempt.
+    extra = {names[2]: event_one_hot(sim.event)} if len(names) == 3 else {}
     reason = None
     while reason is None:
-        action, state = session.run(None, {names[0]: obs.reshape(1, OBS_DIM), names[1]: state})
+        action, state = session.run(
+            None, {names[0]: obs.reshape(1, OBS_DIM), names[1]: state, **extra})
         result = sim.step(np.asarray(action).ravel(), max_steps=min(sim.max_steps, step_cap)
                           if step_cap is not None else None)
         obs, reason = result.obs, result.terminal_reason

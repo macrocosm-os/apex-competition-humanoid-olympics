@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.4.0
+version: 0.5.0
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,21 +12,26 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# Pinned from the v0.4.0 release run (Actions run 32323631933), all four jobs green. Both digests
-# were resolved from ghcr by the v0.4.0 tag and verified with `cosign verify`: signature present,
-# transparency-log entry verified, cert chain verified against the trusted roots, issuer is the
-# GitHub OIDC endpoint, and the cert SAN is this file's `cosign_identity` at refs/tags/v0.4.0. The
-# signing workflow sha is 98ffc31e587623e72e1983383c5914ab8264d117, which is v0.4.0^{commit} -- so
-# these images draw each round's friction and wind from the platform round seed, rather than
-# 0.3.0's one fixed 24-attempt meet. As with 0.2.0 and 0.3.0 these are the FINAL tag's own digests,
-# not a candidate's. The platform pins by digest and rejects tags.
+# DIGESTS BELOW ARE STALE: they are the v0.4.0 build, kept only so this file stays syncable until
+# the v0.5.0 release run finishes. 0.5.0 changes BOTH images. The referee's seven forward channels
+# now report the tallest barrier over a bin instead of the clearance above the pelvis, which is the
+# difference between a hurdles race a policy can see and one it cannot; the player accepts an
+# optional third `event_type` input, which a 0.4.0 player would reject at load. Pointing a 0.5.0
+# spec at 0.4.0 images would silently keep the old sensing AND fail every submission that took the
+# new input at its word. Re-pin both from the release run's job summary, resolve them from ghcr by
+# tag, and verify with `cosign verify` (issuer = the GitHub OIDC endpoint, cert SAN = this file's
+# `cosign_identity` at refs/tags/v0.5.0). Pin the FINAL tag's own digests, not a candidate's. The
+# platform pins by digest and rejects tags.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:d26f215070b2e654d8956ca772cf5f95c0da8ac80b2a8814798222d9597f89b7
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
-# floats. The broad terrain preview now describes the active event's route.
+# floats. The broad terrain preview now describes the active event's route, and
+# its seven forward channels report barrier heights rather than overhead
+# clearance. A policy MAY declare a third input, `event_type` [batch, 6], to be
+# told its discipline; two-input models remain valid and are unaffected.
 submission:
   artifact_type: onnx
   max_size_mb: 15
