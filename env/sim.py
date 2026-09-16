@@ -31,37 +31,23 @@ SCAN_Y = np.linspace(-0.7, 0.7, SCAN_NY)
 OVERHEAD_X = np.linspace(0.0, 4.0, OVERHEAD_N)
 SCAN_CLIP = 2.0
 
-# The seven forward channels report the tallest BARRIER over a bin, not the clearance above the
-# pelvis. Through 0.4.0 they were single upward rays cast from `pz + 0.05`, which made any barrier
-# topping out below the pelvis invisible: six of the ten hurdles (0.55-0.80 m, tops 1.35-1.60 m
-# against a 1.643 m ray origin) returned nothing on any of the 104 channels, so the first 60.9 m of
-# a hurdles race was byte-identical to a plain sprint. Hurdles are `walkable=False`, so the
-# downward terrain scan cannot see them either -- it masks WORLD_GROUP alone, and must keep doing
-# so, because `_ray_down` also feeds the FALL_CLEARANCE gate.
+# The seven forward channels report barriers. Through 0.4.0 they were upward rays from
+# `pz + 0.05`, so the six hurdles topping out below the pelvis were invisible on all 104 channels
+# -- and the downward scan cannot see them either, since it masks WORLD_GROUP alone and must keep
+# doing so (`_ray_down` feeds the FALL_CLEARANCE gate).
 #
-# A bin is sampled rather than point-probed for the same reason a thin obstacle defeats a ray
-# lattice: a hurdle is 0.24 m thick against a 0.667 m channel spacing, so seven point rays missed
-# it roughly two thirds of the time and a "visible" hurdle arrived as a 0.2 m flicker. Four
-# sub-samples put the spacing at 0.167 m, below the thinnest barrier in the meet.
+# Bins are sub-sampled because a 0.24 m hurdle slips between rays spaced 0.667 m apart; four
+# sub-samples close that to 0.167 m.
+#
+# The encoding stays DROP-IN: SCAN_CLIP still means "nothing ahead", as the old ray returned on a
+# miss, and a barrier subtracts its height above the ground (0.55 m hurdle -> 1.45). A 0.4.0 policy
+# folded that constant in as a bias, and 0.5.0's terrain-scale height took a real submission from
+# 0.782833 to 0.000370.
 OVERHEAD_BIN = float(OVERHEAD_X[1] - OVERHEAD_X[0])
 OVERHEAD_SUBSAMPLES = 4
 OVERHEAD_DX = (OVERHEAD_X[:, None] +
                np.linspace(0.0, OVERHEAD_BIN, OVERHEAD_SUBSAMPLES, endpoint=False)[None, :])
-# Anything shorter than this is surface noise, not a barrier.
-BARRIER_EPS = 0.02
-
-# The encoding is deliberately DROP-IN for a 0.4.0-trained policy. Through 0.4.0 these channels
-# were `SCAN_CLIP` (2.0) whenever the upward ray hit nothing, which on this course was almost
-# always: a network trained then folded that constant in as a bias term. Reporting a terrain-scale
-# height here instead moves the channel to ~-0.79 on clear track -- a distribution shift on every
-# step of every event -- and measured on a real 0.4.0 submission that took its meet score from
-# 0.782833 to 0.000370, falling on all 24 attempts.
-#
-# So clear ground still reads exactly 2.0, and a barrier subtracts its height above the surface
-# beneath it: a 0.55 m hurdle reads 1.45, the 1.15 m hurdle 0.85, a 1.30 m bar 0.70. Taller and
-# nearer means smaller, which is the direction 0.4.0's clearance channel already moved in. The
-# distribution therefore changes ONLY where a barrier is present -- which is exactly where 0.4.0
-# showed the policy nothing at all.
+BARRIER_EPS = 0.02  # shorter than this is surface noise, not a barrier
 
 PHYS_DT = 0.002
 FRAME_SKIP = 10
@@ -704,12 +690,8 @@ class OlympicsSim:
         return z_from - d if d >= 0 else -SCAN_CLIP
 
     def _barrier_ahead(self, px: float, py: float, pz: float, c: float, s: float) -> np.ndarray:
-        """Tallest barrier per forward bin, as a 0.4.0-compatible clearance number.
-
-        ``SCAN_CLIP`` means nothing is standing in that bin, exactly as the 0.4.0 upward ray
-        returned on a miss. A barrier subtracts its height above the ground beneath it, so the
-        channel only departs from the old constant where something is actually there.
-        """
+        """Tallest barrier per forward bin: ``SCAN_CLIP`` if the bin is clear, else that
+        constant minus the barrier's height above the ground beneath it."""
         out = np.empty(OVERHEAD_N)
         z_from = pz + RAY_FROM_ABOVE
         for i, row in enumerate(OVERHEAD_DX):

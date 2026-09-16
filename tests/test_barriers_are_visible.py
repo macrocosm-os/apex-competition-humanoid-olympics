@@ -1,22 +1,14 @@
 """Every barrier the meet can end an attempt on must be visible before it is hit.
 
-Through 0.4.0 it was not. Hurdles are `walkable=False`, which keeps them out of the downward
-terrain scan -- that mask is WORLD_GROUP only and has to stay that way, because `_ray_down` also
-feeds the FALL_CLEARANCE gate. The seven forward channels were supposed to cover them, but they
-were upward rays cast from `pelvis + 0.05` (1.643 m at reset), and six of the ten hurdles top out
-between 1.35 m and 1.60 m. They returned nothing, on any of the 104 channels, for the whole first
-half of the race.
+Through 0.4.0 it was not: hurdles are `walkable=False` so the downward scan skips them (that mask
+feeds the FALL_CLEARANCE gate and must stay as it is), and the forward channels were upward rays
+from `pelvis + 0.05`, above six of the ten hurdle tops. `hurdles_100` was byte-identical to
+`sprint_100` for the first 60.9 m.
 
-Asserted at the OBSERVATION level rather than through a score, for the reason
-`test_friction_reaches_contacts.py` gives about friction: a score cannot distinguish a barrier a
-policy could not see from one it saw and failed to clear. Both read as a low number.
-
-The channel is also DROP-IN for a 0.4.0-trained policy: `SCAN_CLIP` still means "nothing ahead",
-and a barrier subtracts its height above the surface. `test_clear_ground_still_reads_2` pins the
-half that keeps existing submissions working -- reporting a terrain-scale height here instead
-took a real 0.4.0 submission from 0.782833 to 0.000370.
+Asserted on the observation, not a score: a score cannot tell a barrier a policy could not see
+from one it saw and failed to clear. `test_clear_ground_still_reads_2` pins the drop-in half --
+reporting a terrain height there instead took a real 0.4.0 submission from 0.782833 to 0.000370.
 """
-
 from __future__ import annotations
 
 import pathlib
@@ -81,11 +73,7 @@ def test_every_hurdle_is_seen_before_it_is_reached():
 
 
 def test_a_hurdle_stays_visible_while_it_is_approached():
-    """A barrier thinner than the channel spacing must not flicker in and out.
-
-    Seven point rays over 4 m sample every 0.667 m; a hurdle is 0.24 m thick, so point sampling
-    missed it about two thirds of the time and delivered a "visible" hurdle as a 0.2 m flash.
-    """
+    """A barrier thinner than the channel spacing must not flicker in and out."""
     sim = _sim("hurdles_100")
     pose = _pose(sim)
     first = min(s.x for s in build_event("hurdles_100").surfaces if s.kind == "hurdle")
@@ -134,11 +122,8 @@ def test_the_high_jump_bar_reports_its_height():
 
 
 def test_clear_ground_still_reads_2():
-    """The drop-in half: no barrier ahead reads exactly what 0.4.0 reported on a miss.
-
-    A 0.4.0-trained policy folded this constant in as a bias. Replacing it with a terrain-scale
-    height on every step is what took a real submission from 0.782833 to 0.000370.
-    """
+    """No barrier ahead reads exactly what 0.4.0 reported on a miss, which a trained policy
+    folded in as a bias."""
     for event in ("sprint_100", "sprint_400", "long_jump", "triple_jump"):
         sim = _sim(event)
         forward = _forward_at(sim, sim.layout.start_x, _pose(sim))
