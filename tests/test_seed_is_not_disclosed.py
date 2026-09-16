@@ -96,16 +96,26 @@ def test_the_unrun_row_does_not_carry_the_seed():
 
 
 def test_the_player_is_told_nothing_that_identifies_the_round():
-    """The referee hands `player.reset` a fixed seed and an empty config, on purpose.
+    """The referee hands `player.reset` a fixed seed and the event name, on purpose.
 
-    A per-round value here would let a policy identify its conditions at runtime instead of
+    A per-ROUND value here would let a policy identify its conditions at runtime instead of
     sensing them, which is the whole point of not showing friction and wind in the observation.
+    The event name is not one: it is public, it is the same six disciplines in the same order
+    every round, and the referee already publishes it per attempt in `result.json`. What must
+    never join it is anything the seed moves -- friction, wind, or the bar height.
     """
     source = pathlib.Path(__file__).resolve().parents[1].joinpath("referee/referee.py").read_text()
     assert "player_index=0, seed=0," in source, (
         "the referee no longer passes a fixed seed=0 into player.reset"
     )
-    assert "config={}" in source, "the referee no longer passes an empty config into player.reset"
+    reset_call = source.split("player.reset(")[1].split(")")[0]
+    assert 'config={"event": sim.event}' in reset_call, (
+        "the referee no longer passes exactly the event name into player.reset"
+    )
+    for condition in ("friction", "wind", "challenge", "bar_height", "seed=int", "params."):
+        assert condition not in reset_call, (
+            f"player.reset now carries {condition!r}, which the round seed moves"
+        )
 
 
 def test_conditions_do_not_narrow_the_seed_to_a_single_candidate():

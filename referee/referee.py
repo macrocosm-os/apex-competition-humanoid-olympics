@@ -70,8 +70,12 @@ class OlympicsReferee(Referee):
                 # socket error at the deadline.
                 reset_timeout = min(30.0, max(0.1, EVALUATION_BUDGET_S -
                                                (time.monotonic() - started)))
+                # The event name, and nothing else. It is public, fixed, and the same in every
+                # round, so it identifies the DISCIPLINE without identifying the round -- the
+                # conditions still have to be sensed. A policy that declares the optional
+                # `event_type` input reads it as a one-hot; one that does not is unaffected.
                 player.reset(match_id=f"{ctx.match_id}:{task_index}", player_index=0, seed=0,
-                             config={}, timeout_s=reset_timeout)
+                             config={"event": sim.event}, timeout_s=reset_timeout)
             except PLAYER_FAULTS:
                 reason = "player_error"
 

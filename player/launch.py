@@ -5,10 +5,15 @@ validates the interface, and serves /health /reset /act. There is no miner code 
 the artifact is a pure ONNX graph (spec `artifact_type: onnx`), so validation is structural.
 
 Contract the submission must satisfy (also in the miner README):
-    inputs   obs       float32 [batch, 104]
-             state_in  float32 [batch, 256]
-    outputs  action    float32 [batch, 12]
-             state_out float32 [batch, 256]
+    inputs   obs        float32 [batch, 104]
+             state_in   float32 [batch, 256]
+             event_type float32 [batch, 6]    OPTIONAL, declare it only if you use it
+    outputs  action     float32 [batch, 12]
+             state_out  float32 [batch, 256]
+
+`event_type` is a one-hot over EVENT_ORDER, constant for an attempt, telling the policy which
+discipline it is running. It is optional on purpose: a two-input model is still valid and still
+loads, so nothing already on the leaderboard has to be resubmitted.
 
 `state_in`/`state_out` are the policy's own per-episode memory, opaque to us: this server zeroes
 it on /reset and feeds each step's `state_out` back in as the next step's `state_in`. Friction
@@ -43,6 +48,10 @@ SUBMISSION_PATH = os.environ.get("SUBMISSION_PATH", "/app/submission.onnx")
 OBS_DIM = 104
 ACT_DIM = 12
 STATE_DIM = 256
+# Must stay in the order of env.course.EVENTS -- the referee sends the NAME and the index is the
+# contract. tests/test_event_type_input.py pins the two together; env/ is not in this image.
+EVENT_ORDER = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump")
+EVENT_DIM = len(EVENT_ORDER)
 
 API_LOG = os.environ.get("APEX_API_LOG", "1") != "0"
 
@@ -79,11 +88,13 @@ def _load_session() -> ort.InferenceSession:
     session = ort.InferenceSession(SUBMISSION_PATH, sess_options=opts,
                                    providers=["CPUExecutionProvider"])
     ins, outs = session.get_inputs(), session.get_outputs()
-    if len(ins) != 2 or len(outs) != 2:
-        raise ValueError(f"model must have exactly 2 inputs and 2 outputs, "
+    if len(ins) not in (2, 3) or len(outs) != 2:
+        raise ValueError(f"model must have 2 or 3 inputs and exactly 2 outputs, "
                          f"got {len(ins)}/{len(outs)}")
     _check(ins[0], OBS_DIM, "input 0 (obs)")
     _check(ins[1], STATE_DIM, "input 1 (state_in)")
+    if len(ins) == 3:
+        _check(ins[2], EVENT_DIM, "input 2 (event_type)")
     _check(outs[0], ACT_DIM, "output 0 (action)")
     _check(outs[1], STATE_DIM, "output 1 (state_out)")
     return session
@@ -100,6 +111,7 @@ class OlympicsPlayer(Player):
         self._session: ort.InferenceSession | None = None
         self._names: list[str] = []
         self._state = np.zeros((1, STATE_DIM), np.float32)
+        self._event = np.zeros((1, EVENT_DIM), np.float32)
         self.load_error: str | None = None
         # Labels the API log; the referee's match_id carries the instance index as ":<i>".
         self._match = "-"
@@ -119,8 +131,15 @@ class OlympicsPlayer(Player):
     def reset(self, match_id: str, player_index: int, seed: int, config: dict[str, Any]) -> None:
         # New event attempt, fresh recurrent memory.
         self._state = np.zeros((1, STATE_DIM), np.float32)
+        # One-hot for the attempt's discipline. An unknown or absent name leaves it all zeros
+        # rather than failing the attempt: the model can run without it, and a reset fault here
+        # would be scored against a submission that did nothing wrong.
+        self._event = np.zeros((1, EVENT_DIM), np.float32)
+        event = (config or {}).get("event")
+        if event in EVENT_ORDER:
+            self._event[0, EVENT_ORDER.index(event)] = 1.0
         self._match, self._step = match_id, 0
-        _api("reset", match=match_id, player_index=player_index, status="ok")
+        _api("reset", match=match_id, player_index=player_index, event=event or "-", status="ok")
 
     def act(self, observation: Any, deadline_ms: int) -> Any:
         if self._session is None:
@@ -129,8 +148,10 @@ class OlympicsPlayer(Player):
             raise RuntimeError(f"submission failed to load: {self.load_error}")
         t0 = time.monotonic()
         obs = np.asarray(observation, dtype=np.float32).reshape(1, OBS_DIM)
-        action, state = self._session.run(
-            None, {self._names[0]: obs, self._names[1]: self._state})
+        feed = {self._names[0]: obs, self._names[1]: self._state}
+        if len(self._names) == 3:
+            feed[self._names[2]] = self._event
+        action, state = self._session.run(None, feed)
         # NaN state would poison every later step of the episode, and the referee's
         # invalid_action gate only inspects the action, so sanitise it here.
         self._state = np.nan_to_num(np.asarray(state, np.float32).reshape(1, STATE_DIM),
