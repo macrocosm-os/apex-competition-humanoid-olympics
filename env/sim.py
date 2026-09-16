@@ -47,6 +47,21 @@ OVERHEAD_BIN = float(OVERHEAD_X[1] - OVERHEAD_X[0])
 OVERHEAD_SUBSAMPLES = 4
 OVERHEAD_DX = (OVERHEAD_X[:, None] +
                np.linspace(0.0, OVERHEAD_BIN, OVERHEAD_SUBSAMPLES, endpoint=False)[None, :])
+# Anything shorter than this is surface noise, not a barrier.
+BARRIER_EPS = 0.02
+
+# The encoding is deliberately DROP-IN for a 0.4.0-trained policy. Through 0.4.0 these channels
+# were `SCAN_CLIP` (2.0) whenever the upward ray hit nothing, which on this course was almost
+# always: a network trained then folded that constant in as a bias term. Reporting a terrain-scale
+# height here instead moves the channel to ~-0.79 on clear track -- a distribution shift on every
+# step of every event -- and measured on a real 0.4.0 submission that took its meet score from
+# 0.782833 to 0.000370, falling on all 24 attempts.
+#
+# So clear ground still reads exactly 2.0, and a barrier subtracts its height above the surface
+# beneath it: a 0.55 m hurdle reads 1.45, the 1.15 m hurdle 0.85, a 1.30 m bar 0.70. Taller and
+# nearer means smaller, which is the direction 0.4.0's clearance channel already moved in. The
+# distribution therefore changes ONLY where a barrier is present -- which is exactly where 0.4.0
+# showed the policy nothing at all.
 
 PHYS_DT = 0.002
 FRAME_SKIP = 10
@@ -688,6 +703,27 @@ class OlympicsSim:
                           np.array([0.0, 0.0, -1.0]), self._barrier_mask, 1, -1, self._geomid)
         return z_from - d if d >= 0 else -SCAN_CLIP
 
+    def _barrier_ahead(self, px: float, py: float, pz: float, c: float, s: float) -> np.ndarray:
+        """Tallest barrier per forward bin, as a 0.4.0-compatible clearance number.
+
+        ``SCAN_CLIP`` means nothing is standing in that bin, exactly as the 0.4.0 upward ray
+        returned on a miss. A barrier subtracts its height above the ground beneath it, so the
+        channel only departs from the old constant where something is actually there.
+        """
+        out = np.empty(OVERHEAD_N)
+        z_from = pz + RAY_FROM_ABOVE
+        for i, row in enumerate(OVERHEAD_DX):
+            tallest = 0.0
+            for dx in row:
+                wx, wy = px + c * dx, py + s * dx
+                top = self._ray_barrier(wx, wy, z_from)
+                ground = self._ray_down(wx, wy, z_from)
+                # Both miss over a void; the downward scan already carries voids.
+                if top > ground + BARRIER_EPS:
+                    tallest = max(tallest, top - ground)
+            out[i] = SCAN_CLIP if tallest <= 0.0 else max(0.0, SCAN_CLIP - tallest)
+        return out
+
     def _obs(self) -> np.ndarray:
         d, yaw = self.data, self._yaw()
         px, py, pz = (float(v) for v in d.qpos[:3])
@@ -706,11 +742,7 @@ class OlympicsSim:
                 scan[k] = self._ray_down(wx, wy, pz + RAY_FROM_ABOVE) - pz
                 k += 1
         np.clip(scan, -SCAN_CLIP, SCAN_CLIP, out=scan)
-        # Tallest barrier per forward bin, pelvis-relative and on the same scale as `scan`:
-        # clear track reads like the ground under it, a hurdle reads its own top.
-        over = np.array([max(self._ray_barrier(px + c * dx, py + s * dx, pz + RAY_FROM_ABOVE)
-                             for dx in row) for row in OVERHEAD_DX]) - pz
-        np.clip(over, -SCAN_CLIP, SCAN_CLIP, out=over)
+        over = self._barrier_ahead(px, py, pz, c, s)
         ground = self._ray_down(px, py, pz + RAY_FROM_ABOVE)
         phase = (self.steps * PHYS_DT * FRAME_SKIP % GAIT_PERIOD) / GAIT_PERIOD
         return np.concatenate([

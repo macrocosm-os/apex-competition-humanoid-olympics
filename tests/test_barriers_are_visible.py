@@ -10,6 +10,11 @@ half of the race.
 Asserted at the OBSERVATION level rather than through a score, for the reason
 `test_friction_reaches_contacts.py` gives about friction: a score cannot distinguish a barrier a
 policy could not see from one it saw and failed to clear. Both read as a low number.
+
+The channel is also DROP-IN for a 0.4.0-trained policy: `SCAN_CLIP` still means "nothing ahead",
+and a barrier subtracts its height above the surface. `test_clear_ground_still_reads_2` pins the
+half that keeps existing submissions working -- reporting a terrain-scale height here instead
+took a real 0.4.0 submission from 0.782833 to 0.000370.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ import numpy as np
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from env.course import HURDLE_HEIGHTS_M, PLINTH_TOP, build_event
-from env.sim import OVERHEAD_N, SCAN_NX, SCAN_NY, OlympicsSim, instance_spec
+from env.sim import OVERHEAD_N, SCAN_CLIP, SCAN_NX, SCAN_NY, OlympicsSim, instance_spec
 
 ROUND_SEED = 757959679
 FORWARD0 = 52 + SCAN_NX * SCAN_NY
@@ -57,14 +62,13 @@ def test_every_hurdle_is_seen_before_it_is_reached():
     """All ten, not just the four that happened to clear the old ray origin."""
     sim = _sim("hurdles_100")
     pose = _pose(sim)
-    flat = float(_forward_at(sim, -2.0, pose).min())
     hurdles = [s for s in build_event("hurdles_100").surfaces if s.kind == "hurdle"]
     assert len(hurdles) == len(HURDLE_HEIGHTS_M)
 
     for hurdle, height in zip(hurdles, HURDLE_HEIGHTS_M, strict=True):
         seen_from = None
         for x in np.arange(hurdle.x - 6.0, hurdle.x, 0.05):
-            if float(_forward_at(sim, float(x), pose).max()) > flat + 1e-6:
+            if float(_forward_at(sim, float(x), pose).min()) < SCAN_CLIP - 1e-6:
                 seen_from = float(x)
                 break
         assert seen_from is not None, (
@@ -84,11 +88,10 @@ def test_a_hurdle_stays_visible_while_it_is_approached():
     """
     sim = _sim("hurdles_100")
     pose = _pose(sim)
-    flat = float(_forward_at(sim, -2.0, pose).min())
     first = min(s.x for s in build_event("hurdles_100").surfaces if s.kind == "hurdle")
 
     xs = np.arange(first - 4.0, first - 0.5, 0.05)
-    seen = [float(_forward_at(sim, float(x), pose).max()) > flat + 1e-6 for x in xs]
+    seen = [float(_forward_at(sim, float(x), pose).min()) < SCAN_CLIP - 1e-6 for x in xs]
     assert all(seen), (
         f"the first hurdle drops out of the observation on {seen.count(False)} of {len(seen)} "
         "steps of the approach"
@@ -120,23 +123,39 @@ def test_the_high_jump_bar_reports_its_height():
     bar = next(s for s in layout.surfaces if s.kind == "bar")
     top = bar.z + bar.hz
 
-    best = max(float(_forward_at(sim, float(x), pose).max())
-               for x in np.arange(bar.x - 4.0, bar.x, 0.05))
-    pelvis = float(pose[0][2])
-    assert abs((best + pelvis) - top) < 0.05, (
-        f"the forward channels report {best + pelvis:.3f} m for a bar whose top is {top:.3f} m"
+    lowest = min(float(_forward_at(sim, float(x), pose).min())
+                 for x in np.arange(bar.x - 4.0, bar.x, 0.05))
+    reported_height = SCAN_CLIP - lowest
+    assert abs((PLINTH_TOP + reported_height) - top) < 0.05, (
+        f"the forward channels imply a bar top of {PLINTH_TOP + reported_height:.3f} m, "
+        f"but it is {top:.3f} m"
     )
     assert top > PLINTH_TOP, "the bar is not above the deck"
 
 
-def test_clear_track_reads_like_the_ground_under_it():
-    """No barrier ahead must be a value on the terrain scale, not a sentinel."""
-    sim = _sim("sprint_100")
+def test_clear_ground_still_reads_2():
+    """The drop-in half: no barrier ahead reads exactly what 0.4.0 reported on a miss.
+
+    A 0.4.0-trained policy folded this constant in as a bias. Replacing it with a terrain-scale
+    height on every step is what took a real submission from 0.782833 to 0.000370.
+    """
+    for event in ("sprint_100", "sprint_400", "long_jump", "triple_jump"):
+        sim = _sim(event)
+        forward = _forward_at(sim, sim.layout.start_x, _pose(sim))
+        assert len(forward) == OVERHEAD_N
+        assert np.allclose(forward, SCAN_CLIP), (
+            f"{event} reports {forward.tolist()} on clear ground, not {SCAN_CLIP}"
+        )
+
+
+def test_a_barrier_subtracts_its_height():
+    """A hurdle reads 2.0 minus its height above the deck, so taller means smaller."""
+    sim = _sim("hurdles_100")
     pose = _pose(sim)
-    obs = sim._obs()
-    forward = _forward_at(sim, -2.0, pose)
-    scan = obs[52:FORWARD0]
-    assert len(forward) == OVERHEAD_N
-    assert abs(float(forward.max()) - float(scan.max())) < 1e-3, (
-        "an unobstructed forward channel disagrees with the terrain scan beneath it"
-    )
+    for hurdle, height in zip([s for s in build_event("hurdles_100").surfaces
+                               if s.kind == "hurdle"], HURDLE_HEIGHTS_M, strict=True):
+        lowest = min(float(_forward_at(sim, float(x), pose).min())
+                     for x in np.arange(hurdle.x - 4.0, hurdle.x, 0.05))
+        assert abs((SCAN_CLIP - lowest) - height) < 0.05, (
+            f"the {height:.2f} m hurdle reports a height of {SCAN_CLIP - lowest:.3f} m"
+        )
