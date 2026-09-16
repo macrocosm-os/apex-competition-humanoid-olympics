@@ -50,16 +50,24 @@ measured, `hurdles_100` was byte-identical to `sprint_100` for the first 60.9 m 
 the four taller hurdles arrived as 0.2 m flickers because seven point rays sample every 0.667 m
 against a 0.24 m obstacle.
 
-The channels now report the tallest barrier over a bin, pelvis-relative and on the terrain scan's
-scale, sampled four times per bin so the spacing (0.167 m) is finer than the thinnest barrier in
-the meet. All ten hurdles are visible from at least 4.5 m out and stay visible through the
-approach. `tests/test_barriers_are_visible.py` asserts this at the observation level rather than
-through a score, for the reason the friction test gives: a score cannot tell a barrier a policy
-could not see from one it saw and failed to clear.
+The channels now report barriers, sampled four times per bin so the spacing (0.167 m) is finer
+than the thinnest barrier in the meet. All ten hurdles are visible from 4.6 m out and stay visible
+through the approach, with their height reported to 0.000 m.
 
-This makes the hurdles harder to blame and easier to solve, so expect the hurdles leaderboard to
-reshuffle on the first round after activation. Cost is 21 extra ray casts per observation, about
-0.04 ms per control step, or 1.6 s across a 40,000-call meet against the referee's 840 s budget.
+**The encoding is deliberately drop-in (0.5.1).** `SCAN_CLIP` (2.0) still means nothing ahead —
+byte-identical to what the 0.4.0 upward ray returned on a miss — and a barrier subtracts its height
+above the ground beneath it. 0.5.0 instead reported a pelvis-relative terrain-scale height, which
+moved the channel to about -0.79 on clear ground: a distribution shift on every step of every
+event. Measured on a real 0.4.0 submission, that took a meet score of 0.782833 to 0.000370, falling
+on all 24 attempts. Under this encoding the same submission scores 0.684274, with five of the six
+events bit-identical to 0.4.0 and only hurdles moving — which is the event the new information is
+in, and no encoding that reveals a hurdle can leave it untouched.
+
+`tests/test_barriers_are_visible.py` asserts both halves at the observation level rather than
+through a score, for the reason the friction test gives: a score cannot tell a barrier a policy
+could not see from one it saw and failed to clear. Cost is 49 extra ray casts per observation,
+about 0.04 ms per control step, or 2 s across a 40,000-call meet against the referee's 840 s
+budget.
 
 ### Telling a policy its discipline (0.5.0)
 

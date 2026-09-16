@@ -76,13 +76,17 @@ for the attempt. Leave it out and nothing changes — two-input policies load an
 before, so no resubmission is required. Build one either way with
 `python tools/make_test_policy.py --event-input`.
 
-The seven forward channels changed meaning in 0.5.0. They were upward rays from just above the
-pelvis, reporting overhead clearance; they now report the height of the tallest barrier over each
-0.67 m bin out to 4.5 m ahead, pelvis-relative and on the same scale as the terrain scan — clear
-track reads like the ground beneath it, a hurdle reads its own top. Through 0.4.0 the six shortest
-hurdles (0.55–0.80 m) sat below the ray origin and appeared on no channel at all, which made the
-first 60.9 m of a hurdles race identical to a sprint. They are all visible now, from at least
-4.5 m out.
+The seven forward channels report barriers as of 0.5.1. **`2.0` still means nothing ahead**, exactly
+as before, and a barrier subtracts its height above the ground beneath it: a 0.55 m hurdle reads
+1.45, the 1.15 m hurdle 0.85, a 1.30 m bar 0.70. Each channel covers a 0.67 m bin out to 4.5 m.
+
+Through 0.4.0 these were upward rays from just above the pelvis, so the six shortest hurdles
+(0.55–0.80 m) sat below the ray origin and appeared on no channel at all — the first 60.9 m of a
+hurdles race was identical to a sprint. All ten are visible now, from 4.6 m out.
+
+A policy trained against 0.4.0 keeps reading `2.0` everywhere it used to, so only its hurdles
+behaviour is affected. 0.5.0 briefly reported a terrain-scale height on every step instead; that
+was a distribution shift on every event and is withdrawn.
 
 Surface friction is authoritative for foot contacts as of 0.2.0. Through 0.1.0 the course geoms
 carried no `geom_priority`, so MuJoCo's element-wise maximum took the G1's default foot value of

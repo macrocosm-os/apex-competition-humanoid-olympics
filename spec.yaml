@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.5.0
+version: 0.5.1
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,15 +12,12 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# Pinned from the v0.5.0 release run (Actions run 35138547017), all four jobs green. Both digests
-# were resolved from ghcr by the v0.5.0 tag and verified with `cosign verify`: signature present,
-# transparency-log entry verified, cert chain verified against the trusted roots, issuer is the
-# GitHub OIDC endpoint, and the cert SAN is this file's `cosign_identity` at refs/tags/v0.5.0. The
-# signing workflow sha is 969752821fa5e22ca59c5d568ec971386317f7af, which is v0.5.0^{commit} -- so
-# the referee in these images reports barrier heights on its seven forward channels rather than
-# 0.4.0's overhead clearance, and the player accepts the optional third `event_type` input. As with
-# every release since 0.2.0 these are the FINAL tag's own digests, not a candidate's. The platform
-# pins by digest and rejects tags.
+# DIGESTS BELOW ARE STALE: the v0.5.0 build, kept only so this file stays syncable until the
+# v0.5.1 release run finishes. 0.5.1 changes the REFEREE -- 0.5.0's forward channels moved off the
+# constant a 0.4.0-trained policy folded in as a bias, taking a real submission from 0.782833 to
+# 0.000370 -- so a 0.5.1 spec on the 0.5.0 referee would keep zeroing every incumbent. Re-pin both
+# from the release run, resolved from ghcr by tag and `cosign verify`d against this file's
+# `cosign_identity` at refs/tags/v0.5.1.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:6a0b20abe91211c702231078ad5f3c1760036cc55d961211a1decc8615d4562e
