@@ -31,7 +31,10 @@ competition.
 ## Scoring
 
 Every discipline returns a bounded score from 0 to 1. A completed attempt scores from 0.25 upward;
-an incomplete attempt remains below 0.25. Faster legal race finishes, higher cleared bars, and
+an incomplete attempt remains below 0.25. As of 0.6.0 no event caps: a reference performance earns
+80% of the margin band and everything beyond keeps paying, with diminishing returns. Long jump
+references 12 m, triple jump 18 m, and high jump is scored on the height actually reached rather
+than on which bar was up. Faster legal race finishes, higher clearances, and
 longer valid horizontal jumps earn more. Limited progress credit remains useful for local training
 without outweighing a complete attempt.
 

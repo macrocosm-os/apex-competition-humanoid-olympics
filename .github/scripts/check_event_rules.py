@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from env import OlympicsSim, event_instances, instance_score, instance_spec
+from env.scoring import REFERENCE_FRACTION
 from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHTS_M, LONG_LANDING_M, LONG_TAKEOFF_M,
                         TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRIPLE_LANDING_M,
                         TRIPLE_TAKEOFF_M, build_event)
@@ -172,15 +173,28 @@ for _ in range(MIN_SUPPORT_STEPS):
 assert triple._event_reason == "landed" and triple._triple_phase == 3
 assert math.isclose(triple._jump_distance, TRIPLE_LANDING_M - TRIPLE_TAKEOFF_M)
 
-# Legal completions receive the reserved finish band and the old triple-score
-# saturation is gone: a minimum legal landing is not a perfect triple jump.
+# A minimum legal landing earns the finish band and nothing more.
 assert math.isclose(instance_score("long_jump", "landed", 0, 0, 1,
                                    {"jump_distance_m": 6.0}), 0.25)
 assert math.isclose(instance_score("triple_jump", "landed", 0, 0, 1,
                                    {"jump_distance_m": 13.0}), 0.25)
-assert math.isclose(instance_score("triple_jump", "landed", 0, 0, 1,
-                                   {"jump_distance_m": 18.0}), 1.0)
-assert math.isclose(instance_score("high_jump", "cleared", 0, 0, 1,
-                                   {"bar_height_m": HIGH_JUMP_BARS_M[-1]}), 1.0)
+
+# The reference performance earns REFERENCE_FRACTION of the margin band, not all of it, and
+# every field event keeps paying beyond it. No cap means no shared ceiling to converge on.
+for event, floor, reference, key in (("long_jump", 6.0, 12.0, "jump_distance_m"),
+                                     ("triple_jump", 13.0, 18.0, "jump_distance_m"),
+                                     ("high_jump", HIGH_JUMP_BARS_M[0], HIGH_JUMP_BARS_M[-1],
+                                      "best_clearance_m")):
+    reason = "cleared" if event == "high_jump" else "landed"
+    at_reference = instance_score(event, reason, 0, 0, 1, {key: reference})
+    assert math.isclose(at_reference, 0.25 + 0.75 * REFERENCE_FRACTION), (event, at_reference)
+    previous = at_reference
+    for step in (1.05, 1.2, 1.5, 2.0):
+        beyond = instance_score(event, reason, 0, 0, 1, {key: reference * step})
+        assert beyond > previous, (event, step, beyond, previous)
+        assert beyond < 1.0, (event, step, beyond)
+        previous = beyond
+    # Bounded whatever is thrown at it.
+    assert instance_score(event, reason, 0, 0, 1, {key: reference * 1000}) <= 1.0
 
 print("ok: hard geometry, anti-duck, legal jumps, and finish scoring")
