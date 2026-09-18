@@ -112,8 +112,26 @@ Landing distance is latched from that first legal sand-contact point, not from a
 
 Each attempt maps to `[0, 1]`; per-event means are then macro-averaged, so a long 400 m cannot
 dominate five shorter disciplines. Incomplete attempts stay below 0.25 and valid finishes score
-from 0.25 upward; quality within finished races is pace, high jump is selected bar height, and
+from 0.25 upward; quality within finished races is pace, high jump is the height reached, and
 horizontal jumps are legal distance.
+
+### No event caps (0.6.0)
+
+Through 0.5.1 three of the six events saturated. Long jump paid nothing past 12 m, triple jump
+nothing past 18 m, and high jump was scored on which bar was up — a fixed four-rung ladder, so
+every policy that cleared all four scored exactly 0.625. Half the meet therefore carried no
+information about who was better, all differentiation ran through three race events, and a field
+that converged could not be displaced: taking the flag needs +1%, against a measured field spread
+of 0.18% and an estimated total remaining race headroom of about 1.85%.
+
+A reference performance now earns `REFERENCE_FRACTION` (0.8) of the 0.75 margin band and the curve
+keeps rising beyond it with diminishing returns, so being better always scores better and nothing
+reaches a shared ceiling. The references are the old caps — 12 m, 18 m, and the top bar — so the
+scale below them is nearly unchanged; what changes is that they are no longer the end of it. High
+jump moves to measured clearance because the ladder is fixed and a bar-indexed score cannot
+separate two policies that both clear it.
+
+Races are untouched: pace already scaled continuously and never capped.
 
 Each launch round repeats the same public four-stratum friction/wind lattice, with opposing wind
 directions.

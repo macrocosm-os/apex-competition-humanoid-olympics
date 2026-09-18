@@ -11,6 +11,19 @@ from .course import (HIGH_JUMP_BARS_M, LONG_LANDING_M, LONG_TAKEOFF_M, TRIPLE_LA
 RACE_EVENTS = frozenset({"sprint_100", "sprint_400", "hurdles_100"})
 JUMP_EVENTS = frozenset({"long_jump", "triple_jump"})
 
+# A reference performance earns this share of the margin band; beyond it the curve keeps rising
+# with diminishing returns, so there is always headroom. Through 0.5.1 the three field events
+# clamped instead, and every serious policy sat on identical 1.0 / 1.0 / 0.625 -- half the meet
+# carried no information about who was better. Races always scaled with pace and are unchanged.
+REFERENCE_FRACTION = 0.8
+
+
+def margin_fraction(value: float, floor: float, reference: float) -> float:
+    """0 at `floor`, REFERENCE_FRACTION at `reference`, approaching 1 as `value` grows."""
+    span = max(reference - floor, 1e-6)
+    rate = -math.log(1.0 - REFERENCE_FRACTION) / span
+    return 1.0 - math.exp(-rate * max(0.0, value - floor))
+
 
 def instance_score(event: str, terminal_reason: str, progress: float, steps: int, max_steps: int,
                    metrics: Mapping[str, float] | None = None) -> float:
@@ -31,18 +44,19 @@ def instance_score(event: str, terminal_reason: str, progress: float, steps: int
         target = max(float(metrics.get("bar_height_m", 0.95)), 1e-6)
         clearance = max(0.0, float(metrics.get("best_clearance_m", 0.0)))
         if terminal_reason == "cleared":
-            normalized_height = min(max((target - HIGH_JUMP_BARS_M[0]) /
-                                        (HIGH_JUMP_BARS_M[-1] - HIGH_JUMP_BARS_M[0]), 0.0), 1.0)
-            return 0.25 + 0.75 * normalized_height
+            # Scored on the height actually reached, not on which bar was up: the ladder is
+            # fixed, so a bar-indexed score gave every clearing policy the same 0.625.
+            return 0.25 + 0.75 * margin_fraction(clearance, HIGH_JUMP_BARS_M[0],
+                                                 HIGH_JUMP_BARS_M[-1])
         return 0.24 * min(clearance / target, 1.0)
 
     if event in JUMP_EVENTS:
         distance = max(0.0, float(metrics.get("jump_distance_m", 0.0)))
         minimum = (LONG_LANDING_M - LONG_TAKEOFF_M if event == "long_jump"
                    else TRIPLE_LANDING_M - TRIPLE_TAKEOFF_M)
-        target = 12.0 if event == "long_jump" else 18.0
+        reference = 12.0 if event == "long_jump" else 18.0
         if terminal_reason == "landed":
-            return 0.25 + 0.75 * min(max((distance - minimum) / (target - minimum), 0.0), 1.0)
+            return 0.25 + 0.75 * margin_fraction(distance, minimum, reference)
         return 0.20 * min(max(float(progress), 0.0), 1.0)
 
     raise ValueError(f"unknown Olympic event {event!r}")

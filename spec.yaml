@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.5.1
+version: 0.6.0
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,11 +12,11 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# Pinned from the v0.5.1 release run (Actions run 35146531646), all four jobs green. Both digests
-# were resolved from ghcr by the v0.5.1 tag and cosign-verified: signature present, transparency
-# log entry verified, cert chain verified, issuer the GitHub OIDC endpoint, and the cert SAN this
-# file's `cosign_identity` at refs/tags/v0.5.1. Signing workflow sha 78f7dda = v0.5.1^{commit}, so
-# the referee here keeps SCAN_CLIP meaning "nothing ahead" rather than 0.5.0's terrain height.
+# DIGESTS BELOW ARE STALE: the v0.5.1 build, kept only so this file stays syncable until the
+# v0.6.0 release run finishes. 0.6.0 changes the REFEREE's scoring: the three field events no
+# longer cap, so a 0.6.0 spec on the 0.5.1 referee would keep scoring the old ceilings. Re-pin
+# both from the release run, resolved from ghcr by tag and `cosign verify`d against this file's
+# `cosign_identity` at refs/tags/v0.6.0.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:40d8c8d363b034b94f88df1e28809651883b163b0a7b59e5adbddd47acf0c3b2
