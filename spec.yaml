@@ -12,14 +12,14 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# DIGESTS BELOW ARE STALE: the v0.5.1 build, kept only so this file stays syncable until the
-# v0.6.0 release run finishes. 0.6.0 changes the REFEREE's scoring: the three field events no
-# longer cap, so a 0.6.0 spec on the 0.5.1 referee would keep scoring the old ceilings. Re-pin
-# both from the release run, resolved from ghcr by tag and `cosign verify`d against this file's
-# `cosign_identity` at refs/tags/v0.6.0.
+# Pinned from the v0.6.0 release run (Actions run 35365784959), all four jobs green. Both digests
+# were resolved from ghcr by the v0.6.0 tag and cosign-verified: signature present, transparency
+# log entry verified, cert chain verified, issuer the GitHub OIDC endpoint, and the cert SAN this
+# file's `cosign_identity` at refs/tags/v0.6.0. Signing workflow sha 12dd9bd = v0.6.0^{commit}, so
+# the referee here scores the field events on margin rather than against a cap.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
-  digest: sha256:40d8c8d363b034b94f88df1e28809651883b163b0a7b59e5adbddd47acf0c3b2
+  digest: sha256:897eabc02d404839d057b453d7524e6ab98ad8c116cf53bc72361e094d1be119
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
@@ -87,7 +87,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
-    digest: sha256:5ec68d973e601d560d342ccaf47b058c278a8167cb3da2ab4b22d5ef17d52a7b
+    digest: sha256:0e484c92b5cae7c31af3b2bc54cc1aea72c81db19e9b9ad43e87b6bd006b39d7
   timeout_s: 900
 
 signature:
