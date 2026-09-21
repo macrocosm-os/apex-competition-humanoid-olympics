@@ -1,4 +1,4 @@
-"""Public geometry for the six legs-only Humanoid Olympics events.
+"""Public geometry for the seven legs-only Humanoid Olympics events.
 
 Every event is short enough to be an individual control problem, rather than a
 general obstacle course. Conditions (friction, wind, and high-jump bar) are a
@@ -26,7 +26,8 @@ GEOM_PREFIX = "course_"
 
 # The launch preset is intentionally aspirational.  A complete all-round meet
 # should be a milestone, not something a flat-ground walker solves immediately.
-EVENTS = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump")
+EVENTS = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump",
+          "race_walk_200")
 EVENT_LABELS = {
     "sprint_100": "100 m sprint",
     "sprint_400": "400 m circular sprint",
@@ -34,6 +35,7 @@ EVENT_LABELS = {
     "high_jump": "high jump",
     "long_jump": "long jump",
     "triple_jump": "triple jump",
+    "race_walk_200": "200 m race walk",
 }
 
 # These are race standards, not generous simulation watchdogs: 100 m needs
@@ -47,6 +49,8 @@ EVENT_MAX_STEPS = {
     "high_jump": 900,
     "long_jump": 1000,
     "triple_jump": 1400,
+    # 200 m in 72 s is 2.78 m/s, brisk for a legal walk but well under a run.
+    "race_walk_200": 3600,
 }
 
 # The escalating hurdles form a within-run curriculum: a policy can make
@@ -54,6 +58,14 @@ EVENT_MAX_STEPS = {
 # the frontier of what this legs-only G1 should be able to clear at speed.
 HURDLE_HEIGHTS_M = (0.55, 0.60, 0.65, 0.70, 0.75,
                      0.80, 0.85, 0.90, 1.00, 1.15)
+# Placement and height order are drawn per round; the SET of heights is fixed, so every round is
+# the same total difficulty in a different arrangement. Through 0.6.0 the ten hurdles sat on a
+# fixed lattice with monotonically rising heights, so position alone predicted the next height and
+# the barrier channels added nothing a policy could not infer.
+HURDLE_FIRST_MIN_M = 10.0
+HURDLE_LAST_MAX_M = 90.0
+HURDLE_MIN_GAP_M = 6.0
+RACE_WALK_DISTANCE_M = 200.0
 HIGH_JUMP_BARS_M = (1.00, 1.10, 1.20, 1.30)
 TAKEOFF_BOARD_BEFORE_M, TAKEOFF_BOARD_AFTER_M = 0.35, 0.05
 LONG_TAKEOFF_M, LONG_LANDING_M = 15.0, 21.0
@@ -128,15 +140,34 @@ def _sprint_100() -> EventLayout:
     return EventLayout("sprint_100", tuple(_straight(100.0)), -2.0, 0.0, 0.0, 100.0)
 
 
-def _hurdles_100() -> EventLayout:
+def hurdle_layout(seed: int) -> list[tuple[float, float]]:
+    """Ten (x, height) pairs for one round: heights shuffled, positions drawn on a min gap."""
+    rng = np.random.default_rng([int(seed) % (1 << 63), 0x40DD1E])
+    heights = list(HURDLE_HEIGHTS_M)
+    rng.shuffle(heights)
+    n = len(heights)
+    slack = (HURDLE_LAST_MAX_M - HURDLE_FIRST_MIN_M) - HURDLE_MIN_GAP_M * (n - 1)
+    offsets = np.sort(rng.uniform(0.0, slack, n))
+    xs = [HURDLE_FIRST_MIN_M + float(offsets[i]) + HURDLE_MIN_GAP_M * i for i in range(n)]
+    return [(round(x, 3), h) for x, h in zip(xs, heights, strict=True)]
+
+
+def _hurdles_100(seed: int) -> EventLayout:
     surfaces = _straight(100.0)
-    # Ten progressively taller barriers. Each overhangs the lane boundary so a
-    # runner cannot skim around its end while leaving its pelvis in bounds.
-    for x, height in zip(np.linspace(12.0, 88.5, 10), HURDLE_HEIGHTS_M, strict=True):
-        surfaces.append(Surface("hurdle", float(x), 0.0, PLINTH_TOP + height / 2,
+    # Each barrier overhangs the lane boundary so a runner cannot skim around its end while
+    # leaving its pelvis in bounds.
+    for x, height in hurdle_layout(seed):
+        surfaces.append(Surface("hurdle", x, 0.0, PLINTH_TOP + height / 2,
                                 0.12, TRACK_HALF_W + 0.20, height / 2,
                                 walkable=False))
     return EventLayout("hurdles_100", tuple(surfaces), -2.0, 0.0, 0.0, 100.0)
+
+
+def _race_walk_200() -> EventLayout:
+    # A flat 200 m. The difficulty is the contact rule, not the terrain: `env.sim` fouls an
+    # attempt that leaves the ground, so speed has to come from gait rather than flight.
+    return EventLayout("race_walk_200", tuple(_straight(RACE_WALK_DISTANCE_M)),
+                       -2.0, 0.0, 0.0, RACE_WALK_DISTANCE_M)
 
 
 def _sprint_400() -> EventLayout:
@@ -197,15 +228,18 @@ def _triple_jump() -> EventLayout:
                         "step_start_x_m": TRIPLE_STEP_START_M})
 
 
-def build_event(event: str, challenge: Mapping[str, float] | None = None) -> EventLayout:
+def build_event(event: str, challenge: Mapping[str, float] | None = None,
+                seed: int = 0) -> EventLayout:
     """Build the named event from its public geometry and round conditions."""
     challenge = challenge or {}
     if event == "sprint_100":
         return _sprint_100()
     if event == "sprint_400":
         return _sprint_400()
+    if event == "race_walk_200":
+        return _race_walk_200()
     if event == "hurdles_100":
-        return _hurdles_100()
+        return _hurdles_100(seed)
     if event == "high_jump":
         return _high_jump(challenge)
     if event == "long_jump":

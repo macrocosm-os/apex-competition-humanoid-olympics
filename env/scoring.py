@@ -8,7 +8,7 @@ from typing import Mapping
 from .course import (HIGH_JUMP_BARS_M, LONG_LANDING_M, LONG_TAKEOFF_M, TRIPLE_LANDING_M,
                      TRIPLE_TAKEOFF_M)
 
-RACE_EVENTS = frozenset({"sprint_100", "sprint_400", "hurdles_100"})
+RACE_EVENTS = frozenset({"sprint_100", "sprint_400", "hurdles_100", "race_walk_200"})
 JUMP_EVENTS = frozenset({"long_jump", "triple_jump"})
 
 # A reference performance earns this share of the margin band; beyond it the curve keeps rising

@@ -9,8 +9,8 @@ collection of event-specific trajectories.
 
 ## Meet shape
 
-Every round runs all six events. Attempts are grouped by event so the referee holds only one
-compiled MuJoCo G1 model at a time. A normal round has four attempts per event (24 total):
+Every round runs all seven events. Attempts are grouped by event so the referee holds only one
+compiled MuJoCo G1 model at a time. A normal round has four attempts per event (28 total):
 
 | Event | maximum control steps | attempts | maximum calls |
 |---|---:|---:|---:|
@@ -20,7 +20,8 @@ compiled MuJoCo G1 model at a time. A normal round has four attempts per event (
 | high jump | 900 | 4 | 3,600 |
 | long jump | 1,000 | 4 | 4,000 |
 | triple jump | 1,400 | 4 | 5,600 |
-| **total** |  |  | **40,000** |
+| 200 m race walk | 3,600 | 4 | 14,400 |
+| **total** |  |  | **54,400** |
 
 This is below the inherited 72,000-call control budget. The referee also stops scheduling new
 attempts after 840 seconds, leaving time for it to write a result before the 900-second sandbox
@@ -194,3 +195,22 @@ The geometry and height band are implementation hypotheses until calibrated. Bef
 release, run a solvability probe for high and triple jump, measure full-round standard deviation
 over at least 20 seeds for the baseline and two materially different policies, and remeasure
 worst-case player latency inside the production image.
+
+
+### Race walk and drawn hurdles (0.7.0)
+
+**`race_walk_200`** is a flat 200 m under a contact rule: at every 500 Hz substep at least one foot
+must be on the track, and flight beyond `MAX_FLIGHT_STEPS` (40 ms, the same tolerance the jump
+gates use) ends the attempt as `lost_contact`. It scores like a race — completion plus pace, with
+partial progress credit otherwise — so a foul keeps only the distance walked before it. The point
+is an event where speed has to come from gait: momentum carried through the air pays nothing.
+
+**Hurdle placement and height order are now drawn per round.** The ten heights are fixed as a set
+and shuffled, and positions are drawn inside a 10-90 m window on a 6 m minimum gap, so a round is a
+rearrangement rather than a harder or easier meet. Through 0.6.0 the hurdles sat on a fixed lattice
+with monotonically rising heights, which meant position alone predicted the next height and the
+0.5.1 barrier channels added nothing a policy could not already infer. They are now load-bearing.
+
+Two consequences. `event_type` widens to `[batch, 7]`, so a policy that declares it must be
+re-exported; two-input policies are unaffected. And the meet's macro-average now divides by seven,
+so every score moves even where behaviour does not.

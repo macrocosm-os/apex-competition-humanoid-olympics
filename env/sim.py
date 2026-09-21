@@ -75,6 +75,9 @@ HIGH_LANDING_OFFSET_M = 0.75
 SUPPORT_TOP_TOLERANCE_M = 0.06
 SUPPORT_NORMAL_Z_MIN = 0.65
 MIN_SUPPORT_IMPULSE_NS = 0.50
+# Race walk: losing contact for longer than this fouls the attempt. Same 40 ms tolerance the jump
+# gates use, so sensor noise is not a foul but a stride of flight is.
+MAX_FLIGHT_STEPS = 20
 
 
 def event_one_hot(event: str) -> np.ndarray:
@@ -230,7 +233,7 @@ class OlympicsSim:
 
     def __init__(self, params: InstanceParams):
         self.params = params
-        self.layout = build_event(params.event, params.challenge)
+        self.layout = build_event(params.event, params.challenge, params.seed)
         rng = np.random.default_rng([params.seed, 0xC0FFEE])
         self.frictions = sample_frictions(self.layout, params.friction_level, rng)
         self.model, geoms = _shared_model(self.layout)
@@ -265,11 +268,13 @@ class OlympicsSim:
         self._barrier_mask[OVERHEAD_GROUP] = 1
         self._geomid = np.zeros(1, np.int32)
         self._action = np.zeros(ACT_DIM)
+        self._walk_airborne_steps = 0
         self.steps = 0
         self.max_x = self.layout.start_x
         self._circle_prev = 0.0
         self._circle_distance = 0.0
         self._best_clearance = 0.0
+        self._walk_airborne_steps = 0
         self._jump_distance = 0.0
         self._jump_landed = False
         self._landing_contact_x: float | None = None
@@ -334,6 +339,7 @@ class OlympicsSim:
         self._circle_prev = math.atan2(float(self.data.qpos[1]), float(self.data.qpos[0]))
         self._circle_distance = 0.0
         self._best_clearance = 0.0
+        self._walk_airborne_steps = 0
         self._jump_distance = 0.0
         self._jump_landed = False
         self._landing_contact_x = None
@@ -385,7 +391,9 @@ class OlympicsSim:
         if abs(self._route()[1]) > TRACK_HALF_W:
             self._event_reason = "out_of_bounds"
             return
-        if self.event == "hurdles_100" and self._hits("hurdle"):
+        if self.event == "race_walk_200":
+            self._observe_race_walk(x)
+        elif self.event == "hurdles_100" and self._hits("hurdle"):
             self._event_reason = "hurdle_hit"
         elif self.event == "high_jump":
             self._observe_high_jump(prev_x, x, z)
@@ -396,6 +404,15 @@ class OlympicsSim:
         elif self.event == "sprint_400" and self._circle_distance >= 400.0:
             self._event_reason = "completed"
         self._prev_x = x
+
+    def _observe_race_walk(self, x: float) -> None:
+        """One foot down, always. Flight beyond the tolerance ends the attempt."""
+        # An empty dict is both feet off the ground: `_foot_contacts` omits feet with no contact.
+        self._walk_airborne_steps = 0 if self._foot_contacts() else self._walk_airborne_steps + 1
+        if self._walk_airborne_steps > MAX_FLIGHT_STEPS:
+            self._event_reason = "lost_contact"
+        elif x >= self.layout.finish:
+            self._event_reason = "completed"
 
     def _observe_high_jump(self, prev_x: float, x: float, z: float) -> None:
         """Require a real flight over the bar and a supported far-side landing."""
@@ -750,7 +767,7 @@ class OlympicsSim:
             return "fell"
         if pz - self._ray_down(px, py, pz + RAY_FROM_ABOVE) < FALL_CLEARANCE:
             return "fell"
-        if self.event in {"sprint_100", "hurdles_100"} and px >= self.layout.finish:
+        if self.event in {"sprint_100", "hurdles_100", "race_walk_200"} and px >= self.layout.finish:
             return "completed"
         if self.event == "sprint_400" and self._circle_distance >= 400.0:
             return "completed"

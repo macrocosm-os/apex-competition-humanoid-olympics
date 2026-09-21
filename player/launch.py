@@ -7,7 +7,7 @@ the artifact is a pure ONNX graph (spec `artifact_type: onnx`), so validation is
 Contract the submission must satisfy (also in the miner README):
     inputs   obs        float32 [batch, 104]
              state_in   float32 [batch, 256]
-             event_type float32 [batch, 6]    OPTIONAL, declare it only if you use it
+             event_type float32 [batch, 7]    OPTIONAL, declare it only if you use it
     outputs  action     float32 [batch, 12]
              state_out  float32 [batch, 256]
 
@@ -50,7 +50,8 @@ ACT_DIM = 12
 STATE_DIM = 256
 # Must stay in the order of env.course.EVENTS -- the referee sends the NAME and the index is the
 # contract. tests/test_event_type_input.py pins the two together; env/ is not in this image.
-EVENT_ORDER = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump")
+EVENT_ORDER = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump",
+               "triple_jump", "race_walk_200")
 EVENT_DIM = len(EVENT_ORDER)
 
 API_LOG = os.environ.get("APEX_API_LOG", "1") != "0"

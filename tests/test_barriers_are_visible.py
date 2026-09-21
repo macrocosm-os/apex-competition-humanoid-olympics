@@ -50,14 +50,19 @@ def _pose(sim: OlympicsSim) -> tuple[np.ndarray, np.ndarray]:
     return sim.data.qpos.copy(), sim.data.qvel.copy()
 
 
+def _hurdles(sim: OlympicsSim) -> list[tuple[object, float]]:
+    """(surface, height) for this sim's own layout -- placement is drawn per round."""
+    return [(s, round(s.hz * 2, 2)) for s in sim.layout.surfaces if s.kind == "hurdle"]
+
+
 def test_every_hurdle_is_seen_before_it_is_reached():
     """All ten, not just the four that happened to clear the old ray origin."""
     sim = _sim("hurdles_100")
     pose = _pose(sim)
-    hurdles = [s for s in build_event("hurdles_100").surfaces if s.kind == "hurdle"]
+    hurdles = _hurdles(sim)
     assert len(hurdles) == len(HURDLE_HEIGHTS_M)
 
-    for hurdle, height in zip(hurdles, HURDLE_HEIGHTS_M, strict=True):
+    for hurdle, height in hurdles:
         seen_from = None
         for x in np.arange(hurdle.x - 6.0, hurdle.x, 0.05):
             if float(_forward_at(sim, float(x), pose).min()) < SCAN_CLIP - 1e-6:
@@ -76,7 +81,7 @@ def test_a_hurdle_stays_visible_while_it_is_approached():
     """A barrier thinner than the channel spacing must not flicker in and out."""
     sim = _sim("hurdles_100")
     pose = _pose(sim)
-    first = min(s.x for s in build_event("hurdles_100").surfaces if s.kind == "hurdle")
+    first = min(h.x for h, _ in _hurdles(sim))
 
     xs = np.arange(first - 4.0, first - 0.5, 0.05)
     seen = [float(_forward_at(sim, float(x), pose).min()) < SCAN_CLIP - 1e-6 for x in xs]
@@ -90,7 +95,7 @@ def test_a_hurdles_race_does_not_look_like_a_sprint():
     """The two events share a start, a finish, and a lane. Only the barriers separate them."""
     hurdles, sprint = _sim("hurdles_100"), _sim("sprint_100")
     pose = _pose(sprint)
-    first = min(s.x for s in build_event("hurdles_100").surfaces if s.kind == "hurdle")
+    first = min(h.x for h, _ in _hurdles(hurdles))
 
     separated = None
     for x in np.arange(-2.0, first, 0.05):
@@ -137,8 +142,7 @@ def test_a_barrier_subtracts_its_height():
     """A hurdle reads 2.0 minus its height above the deck, so taller means smaller."""
     sim = _sim("hurdles_100")
     pose = _pose(sim)
-    for hurdle, height in zip([s for s in build_event("hurdles_100").surfaces
-                               if s.kind == "hurdle"], HURDLE_HEIGHTS_M, strict=True):
+    for hurdle, height in _hurdles(sim):
         lowest = min(float(_forward_at(sim, float(x), pose).min())
                      for x in np.arange(hurdle.x - 4.0, hurdle.x, 0.05))
         assert abs((SCAN_CLIP - lowest) - height) < 0.05, (

@@ -48,7 +48,7 @@ which is what keeps the incumbent's start-of-round re-score comparable to its ch
 The round result is:
 
 ```
-raw_score = mean(event_mean[100m, 400m, hurdles, high jump, long jump, triple jump])
+raw_score = mean(event_mean[100m, 400m, hurdles, high jump, long jump, triple jump, 200m walk])
 ```
 
 The referee records every event attempt in `result.json` metadata and writes a replayable history
@@ -62,7 +62,7 @@ Submit one ONNX model, at most 15 MB, with exactly:
 ```
 inputs   obs        float32 [batch, 104]
          state_in   float32 [batch, 256]
-         event_type float32 [batch, 6]    OPTIONAL
+         event_type float32 [batch, 7]    OPTIONAL
 outputs  action     float32 [batch, 12]
          state_out  float32 [batch, 256]
 ```
@@ -74,7 +74,7 @@ forward barrier channels. Friction and wind are not observation fields; a policy
 their effects.
 
 `event_type` is new in 0.5.0 and is **optional**: declare it as a third input and you receive a
-one-hot over `(sprint_100, sprint_400, hurdles_100, high_jump, long_jump, triple_jump)`, constant
+one-hot over `(sprint_100, sprint_400, hurdles_100, high_jump, long_jump, triple_jump, race_walk_200)`, constant
 for the attempt. Leave it out and nothing changes — two-input policies load and score exactly as
 before, so no resubmission is required. Build one either way with
 `python tools/make_test_policy.py --event-input`.
