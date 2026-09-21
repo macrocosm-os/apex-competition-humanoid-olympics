@@ -109,12 +109,12 @@ def test_both_arities_load_and_run():
         session = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
         assert len(session.get_inputs()) == (3 if event_input else 2)
 
-        instance = player.OlympicsPlayer.__new__(player.OlympicsPlayer)
-        instance._session = session
-        instance._names = [i.name for i in session.get_inputs()]
-        instance._state = np.zeros((1, player.STATE_DIM), np.float32)
-        instance._event = np.zeros((1, EVENT_DIM), np.float32)
-        instance._match, instance._step = "m:0", 0
+        # Construct the way the sandbox does, so the test cannot drift from __init__.
+        player.SUBMISSION_PATH = str(out)
+        instance = player.OlympicsPlayer()
+        assert instance.load_error is None, instance.load_error
+        assert instance.is_ready()
+        assert instance._event_width == (EVENT_DIM if event_input else 0)
         instance.reset(match_id="m:0", player_index=0, seed=0, config={"event": "hurdles_100"})
 
         action = instance.act(observation=[0.0] * player.OBS_DIM, deadline_ms=500)
