@@ -205,11 +205,17 @@ gates use) ends the attempt as `lost_contact`. It scores like a race — complet
 partial progress credit otherwise — so a foul keeps only the distance walked before it. The point
 is an event where speed has to come from gait: momentum carried through the air pays nothing.
 
-**Hurdle placement and height order are now drawn per round.** The ten heights are fixed as a set
-and shuffled, and positions are drawn inside a 10-90 m window on a 6 m minimum gap, so a round is a
-rearrangement rather than a harder or easier meet. Through 0.6.0 the hurdles sat on a fixed lattice
-with monotonically rising heights, which meant position alone predicted the next height and the
-0.5.1 barrier channels added nothing a policy could not already infer. They are now load-bearing.
+**Hurdle placement and height order are drawn per attempt**, from the instance seed, so the four
+attempts in a round each face a different course. The ten heights are fixed as a set and shuffled,
+and positions are drawn inside a 10-90 m window on a 6 m minimum gap: an attempt is a
+rearrangement, never a harder or easier one. Through 0.6.0 the hurdles sat on a fixed lattice with
+monotonically rising heights, which meant position alone predicted the next height and the 0.5.1
+barrier channels added nothing a policy could not already infer. They are now load-bearing.
+
+Drawing per attempt rather than per round is deliberate. Cross-round score spread is already the
+same order as the 1% takeover threshold, and averaging four independent layouts gives an event
+mean with a quarter of the layout variance that four runs on one layout would carry — so the
+hurdles stay a measurement rather than a lottery.
 
 `event_type` widens to `[batch, 7]`, but **not as a breaking change**: the player accepts any
 declared width up to `EVENT_DIM`, and new events are appended rather than reordered, so a policy

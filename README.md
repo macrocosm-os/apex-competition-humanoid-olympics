@@ -4,16 +4,17 @@
 |---|---|---|
 | <img src="docs/images/100m-sprint-hard-3d.png" alt="3D preview of the hard 100 m sprint" width="100%"><br><img src="docs/images/100m-sprint.svg" alt="100 m sprint geometry" width="100%"> | <img src="docs/images/400m-circular-sprint-hard-3d.png" alt="3D preview of the hard 400 m circular sprint" width="100%"><br><img src="docs/images/400m-circular-sprint.svg" alt="400 m circular sprint geometry" width="100%"> | <img src="docs/images/100m-hurdles-hard-3d.png" alt="3D preview of the hard 100 m hurdles" width="100%"><br><img src="docs/images/100m-hurdles.svg" alt="100 m hurdles geometry" width="100%"> |
 | <img src="docs/images/high-jump-hard-3d.png" alt="3D preview of the hard high jump" width="100%"><br><img src="docs/images/high-jump.svg" alt="High jump geometry" width="100%"> | <img src="docs/images/long-jump-hard-3d.png" alt="3D preview of the hard long jump" width="100%"><br><img src="docs/images/long-jump.svg" alt="Long jump geometry" width="100%"> | <img src="docs/images/triple-jump-hard-3d.png" alt="3D preview of the hard triple jump" width="100%"><br><img src="docs/images/triple-jump.svg" alt="Triple jump geometry" width="100%"> |
+| <img src="docs/images/200m-race-walk.svg" alt="200 m race walk geometry" width="100%"> | | |
 
-Train one legs-only Unitree G1 controller to compete across a balanced six-event athletics meet.
+Train one legs-only Unitree G1 controller to compete across a balanced seven-event athletics meet.
 Each evaluation contains the same number of attempts of every discipline, and the leaderboard
 score is their equal-weight mean. The aim is a fast, adaptive, all-round humanoid athlete — not
 a policy specialised to one obstacle.
 
-The initial course preset is deliberately severe: a 24 s 100 m, 72 s circular 400 m, ten rising
-hurdles from 0.55 to 1.15 m, 1.00–1.30 m high bars, a 6 m long-jump void, and wide legal
-triple-jump phases. A first complete all-round performance is intended to be a meaningful
-breakthrough.
+The course preset is deliberately severe: a 24 s 100 m, 72 s circular 400 m, ten hurdles whose heights and placement
+are drawn afresh for every attempt, 1.00–1.30 m high bars, a 6 m long-jump void, wide legal triple-jump
+phases, and a 200 m walk that ends the moment both feet leave the track. A first complete
+all-round performance is intended to be a meaningful breakthrough.
 
 | Discipline | Skill tested |
 |---|---|
@@ -23,6 +24,7 @@ breakthrough.
 | high jump | a clean vertical clearance and crossing |
 | long jump | approach, take-off, flight, and safe landing |
 | triple jump | an ordered hop, step, and final landing |
+| 200 m race walk | sustained speed under a continuous ground-contact rule |
 
 The robot has twelve actuated leg joints. Its arms and upper body are physical mass and collision
 geometry, but are not actuated; throwing events and pole vault intentionally belong in a future
@@ -42,7 +44,7 @@ The launch configuration is fixed in shape: four attempts of every event, four b
 wind/friction strata, 8 m/s maximum wind, 500 ms per action, and a replay history recorded at
 stride 2. The conditions inside that shape follow the platform round seed -- the friction and wind
 strata are phase-shifted per round and per event, so a policy has to hold up across the band
-instead of at one memorised set of 24 operating points. A given seed reproduces its meet exactly,
+instead of at one memorised set of 28 operating points. A given seed reproduces its meet exactly,
 which is what keeps the incumbent's start-of-round re-score comparable to its challengers'.
 
 The round result is:
@@ -109,7 +111,7 @@ policy using the vendored `gym_v1` API.
 PYTHONPATH=. python tools/make_test_policy.py --out /tmp/test.onnx
 PYTHONPATH=. python tools/local_eval.py /tmp/test.onnx -n 1 --max-steps 200
 
-# Evaluate a full four-attempt meet (24 event attempts):
+# Evaluate a full four-attempt meet (28 event attempts):
 PYTHONPATH=. python tools/local_eval.py baseline/baseline.onnx -n 4 --seed 1
 
 # Inspect or film one event:
@@ -118,8 +120,8 @@ PYTHONPATH=. python tools/preview.py --event high_jump --attempt 2 --run baselin
 ```
 
 `--max-steps` is a local debugging cap. A scored meet uses each discipline's own official cap:
-1,200 steps for the 100 m (24 s), 3,600 for the 400 m (72 s), 1,900 for hurdles, and shorter
-event-specific caps for jumps.
+1,200 steps for the 100 m (24 s), 3,600 for the 400 m (72 s) and the 200 m walk, 1,900 for
+hurdles, and shorter event-specific caps for jumps.
 
 To run both production images locally:
 
@@ -141,7 +143,7 @@ jq '.raw_scores, .metadata.event_scores' /tmp/olympics-data/result.json
 ## Example histories
 
 [`docs/example-histories/seed-1-baseline/`](docs/example-histories/seed-1-baseline/) contains a
-complete replayable 24-attempt seed-1 meet from the published baseline: four attempts of every
+complete replayable seed-1 meet from the published baseline: four attempts of every
 event, with the exact friction, wind, geometry, actions, and poses recorded. It is intentionally a
 weak baseline, so its falls, fouls, and partial progress are useful renderer test cases too.
 

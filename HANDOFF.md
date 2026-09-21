@@ -11,7 +11,7 @@ onboarding request by itself. As of 0.2.0 there is no calibration gate: `baselin
 > A winning submission is one compact recurrent, legs-only Unitree G1 controller that can sprint,
 > stay on a narrow lane through a sustained corner, clear progressively harder hurdles, and execute
 > legal vertical and horizontal jumps under seeded surface and wind conditions. It must be an
-> adaptable all-round athletic controller rather than six memorised or invalid trajectories.
+> adaptable all-round athletic controller rather than seven memorised or invalid trajectories.
 
 **Alignment checks and review plan**
 
@@ -57,9 +57,9 @@ Score-affecting pins already committed:
 | Process / kind | CPU / solo | A single 15 MB ONNX policy and deterministic MuJoCo physics fit CPU; score is absolute. |
 | Round length / reveal | 2 days / 5 days | The fixed v0.1 meet can loop while trained-control breakthroughs retain meaningful IP. |
 | Score direction | higher is better | Legal speed, height, and distance are monotone athletic improvements. |
-| Launch meet | 4 attempts × 6 events; 40,000 maximum actions | Fixed shape makes cross-round scores comparable while sampling four condition strata. |
+| Meet | 4 attempts × 7 events; 54,400 maximum actions | Fixed shape makes cross-round scores comparable while sampling four condition strata. |
 | Resources | 2 CPU, 2 GiB, 0 GPU | Native evidence peaked at 927.8 MiB, leaving >50% headroom; this ceiling is exercised in release CI. |
-| Timeouts | player 1,200 s; referee 900 s; internal scheduler 840 s | Leaves persistence time after a full recorded 24-attempt meet. |
+| Timeouts | player 1,200 s; referee 900 s; internal scheduler 840 s | Leaves persistence time after a full recorded 28-attempt meet. |
 | Action deadline | 500 ms | Caps inference latency while remaining realistic for compact recurrent CPU ONNX. |
 | Baseline score | 0.0 by choice | The platform entry bar, not a measurement. See `spec.yaml` `defaults` for why 0.1.0's measured 0.032985375 was withdrawn. |
 | Submission fee | propose USD 1 in TAO | Discourages low-effort repetition and approximately covers simulator cost. |
@@ -67,7 +67,7 @@ Score-affecting pins already committed:
 
 ## 4. Evaluation sizing
 
-The fixed launch unit is 24 attempts: four deterministic condition strata for each of six
+The fixed unit is 28 attempts: four deterministic condition strata for each of seven
 equal-weight events, repeated identically for every round seed. The candidate workflow runs the baseline, a stationary valid ONNX reference,
 and an independently seeded untrained ONNX reference across 20 master seeds in the actual
 two-container native-amd64 setup. It records per-seed raw/event scores, standard deviation,

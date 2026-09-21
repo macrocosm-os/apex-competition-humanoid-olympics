@@ -17,9 +17,13 @@ from env.sim import _mesh_assets, _scene_xml
 OUT = pathlib.Path("renders")
 
 
-def _lit_model(event: str, frictions, challenge=None) -> mujoco.MjModel:
-    """The scored layout with lights added; replay uses this exact helper."""
-    layout = build_event(event, challenge)
+def _lit_model(event: str, frictions, challenge=None, seed: int = 0) -> mujoco.MjModel:
+    """The scored layout with lights added; replay uses this exact helper.
+
+    `seed` matters for hurdles, whose placement is drawn per attempt -- without it the render
+    would show a different course from the one being scored.
+    """
+    layout = build_event(event, challenge, seed)
     xml = _scene_xml(layout)
     # The robot asset does not define a <visual> block, so add one rather than
     # relying on MuJoCo's 640px default offscreen framebuffer.
@@ -69,7 +73,7 @@ def frames_dir(name: str) -> pathlib.Path:
 
 def render_event(sim: OlympicsSim) -> None:
     OUT.mkdir(exist_ok=True)
-    model = _lit_model(sim.event, sim.frictions, sim.params.challenge)
+    model = _lit_model(sim.event, sim.frictions, sim.params.challenge, sim.params.seed)
     data = mujoco.MjData(model)
     sim.reset()
     data.qpos[:] = sim.data.qpos
@@ -95,7 +99,7 @@ def film_run(sim: OlympicsSim, artifact: str, step_cap: int | None) -> None:
     options.intra_op_num_threads = options.inter_op_num_threads = 1
     session = ort.InferenceSession(artifact, sess_options=options, providers=["CPUExecutionProvider"])
     names = [item.name for item in session.get_inputs()]
-    view = _lit_model(sim.event, sim.frictions, sim.params.challenge)
+    view = _lit_model(sim.event, sim.frictions, sim.params.challenge, sim.params.seed)
     view_data = mujoco.MjData(view)
     renderer = mujoco.Renderer(view, height=720, width=1280)
     camera, option = _camera()
