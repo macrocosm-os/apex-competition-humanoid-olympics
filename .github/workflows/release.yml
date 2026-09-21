@@ -193,8 +193,8 @@ jobs:
           m = r['metadata']
           bad = {'player_error', 'invalid_action', 'submission_not_ready', 'round_timeout'}
           reasons = {row['terminal_reason'] for row in m['tasks']}
-          assert len(m['tasks']) == 24, m
-          assert m['history_files'] == 24, m
+          assert len(m['tasks']) == 28, m
+          assert m['history_files'] == 28, m
           assert r['raw_scores'][0] > 0, r
           assert not (reasons & bad), reasons
           assert m['eval_time_in_seconds'] < 840, m
