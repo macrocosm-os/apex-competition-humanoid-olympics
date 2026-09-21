@@ -21,8 +21,12 @@ def rollout(session, sim: OlympicsSim, obs: np.ndarray, step_cap: int | None,
             rec: InstanceRecorder | None = None) -> str:
     state = np.zeros((1, STATE_DIM), np.float32)
     names = [item.name for item in session.get_inputs()]
-    # Mirror the player: a third declared input is the event one-hot, held for the attempt.
-    extra = {names[2]: event_one_hot(sim.event)} if len(names) == 3 else {}
+    # Mirror the player: a third declared input is the event one-hot, held for the attempt, and
+    # any width up to EVENT_DIM is valid -- a policy predating an event sees it as all-zero.
+    extra = {}
+    if len(names) == 3:
+        width = session.get_inputs()[2].shape[-1]
+        extra = {names[2]: event_one_hot(sim.event)[:, :width].copy()}
     reason = None
     while reason is None:
         action, state = session.run(

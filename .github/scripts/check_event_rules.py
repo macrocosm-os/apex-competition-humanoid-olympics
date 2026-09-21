@@ -15,7 +15,8 @@ import numpy as np
 
 from env import OlympicsSim, event_instances, instance_score, instance_spec
 from env.scoring import REFERENCE_FRACTION
-from env.course import (HIGH_JUMP_BARS_M, HURDLE_HEIGHTS_M, LONG_LANDING_M, LONG_TAKEOFF_M,
+from env.course import (HIGH_JUMP_BARS_M, HURDLE_FIRST_MIN_M, HURDLE_HEIGHTS_M,
+                        HURDLE_LAST_MAX_M, HURDLE_MIN_GAP_M, LONG_LANDING_M, LONG_TAKEOFF_M,
                         TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRIPLE_LANDING_M,
                         TRIPLE_TAKEOFF_M, build_event)
 from env.sim import (HIGH_CLEARANCE_MARGIN_M, HIGH_LANDING_OFFSET_M, MIN_AIRBORNE_STEPS,
@@ -30,9 +31,19 @@ def sim(event: str) -> OlympicsSim:
 
 # The public geometry carries the promised hard dimensions, and the decorative
 # floor cannot ever become a lower route.
+# Placement and height order are drawn per round; the SET of heights, the count, the lane window
+# and the minimum gap are not. A round must be a rearrangement, never a harder or easier meet.
+for layout_seed in (0, 1, 7, 757959679):
+    hurdles = build_event("hurdles_100", seed=layout_seed)
+    bars = [s for s in hurdles.surfaces if s.kind == "hurdle"]
+    assert len(bars) == 10
+    assert sorted(round(s.hz * 2, 2) for s in bars) == sorted(HURDLE_HEIGHTS_M)
+    xs = sorted(s.x for s in bars)
+    assert xs[0] >= HURDLE_FIRST_MIN_M - 1e-6 and xs[-1] <= HURDLE_LAST_MAX_M + 1e-6
+    assert min(b - a for a, b in zip(xs, xs[1:])) >= HURDLE_MIN_GAP_M - 1e-6
+assert build_event("hurdles_100", seed=1) != build_event("hurdles_100", seed=2)
+assert build_event("hurdles_100", seed=1) == build_event("hurdles_100", seed=1)
 hurdles = build_event("hurdles_100")
-assert len([s for s in hurdles.surfaces if s.kind == "hurdle"]) == 10
-assert tuple(round(s.hz * 2, 2) for s in hurdles.surfaces if s.kind == "hurdle") == HURDLE_HEIGHTS_M
 hurdle_sim = sim("hurdles_100")
 hurdle_ids = hurdle_sim._obstacle_geom_ids["hurdle"]
 assert len(hurdle_ids) == 10

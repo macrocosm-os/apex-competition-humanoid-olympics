@@ -7,13 +7,15 @@ the artifact is a pure ONNX graph (spec `artifact_type: onnx`), so validation is
 Contract the submission must satisfy (also in the miner README):
     inputs   obs        float32 [batch, 104]
              state_in   float32 [batch, 256]
-             event_type float32 [batch, 6]    OPTIONAL, declare it only if you use it
+             event_type float32 [batch, 1..7] OPTIONAL, declare it only if you use it
     outputs  action     float32 [batch, 12]
              state_out  float32 [batch, 256]
 
 `event_type` is a one-hot over EVENT_ORDER, constant for an attempt, telling the policy which
 discipline it is running. It is optional on purpose: a two-input model is still valid and still
-loads, so nothing already on the leaderboard has to be resubmitted.
+loads, so nothing already on the leaderboard has to be resubmitted. Any width up to EVENT_DIM is
+accepted, so a policy built for a shorter meet also keeps working -- new events are appended, so
+the older disciplines keep their indices and only the new ones read as all-zero.
 
 `state_in`/`state_out` are the policy's own per-episode memory, opaque to us: this server zeroes
 it on /reset and feeds each step's `state_out` back in as the next step's `state_in`. Friction
@@ -50,7 +52,8 @@ ACT_DIM = 12
 STATE_DIM = 256
 # Must stay in the order of env.course.EVENTS -- the referee sends the NAME and the index is the
 # contract. tests/test_event_type_input.py pins the two together; env/ is not in this image.
-EVENT_ORDER = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump")
+EVENT_ORDER = ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump",
+               "triple_jump", "race_walk_200")
 EVENT_DIM = len(EVENT_ORDER)
 
 API_LOG = os.environ.get("APEX_API_LOG", "1") != "0"
@@ -79,6 +82,21 @@ def _check(tensor, want_last: int, what: str) -> None:
         raise ValueError(f"{what} must have shape [batch, {want_last}], got {tensor.shape}")
 
 
+def _check_event_width(tensor) -> int:
+    """Any one-hot width up to EVENT_DIM is valid; events beyond it read as all-zero.
+
+    A policy built for an earlier, shorter meet keeps loading when an event is added -- the six
+    original disciplines keep their indices, so its input is unchanged on all of them.
+    """
+    if tensor.type != "tensor(float)":
+        raise ValueError(f"input 2 (event_type) must be float32, got {tensor.type}")
+    width = tensor.shape[-1] if len(tensor.shape) == 2 else None
+    if not isinstance(width, int) or not 1 <= width <= EVENT_DIM:
+        raise ValueError(f"input 2 (event_type) must have shape [batch, 1..{EVENT_DIM}], "
+                         f"got {tensor.shape}")
+    return width
+
+
 def _load_session() -> ort.InferenceSession:
     opts = ort.SessionOptions()
     # Single-threaded for determinism: same policy + same observations must produce the same
@@ -94,7 +112,7 @@ def _load_session() -> ort.InferenceSession:
     _check(ins[0], OBS_DIM, "input 0 (obs)")
     _check(ins[1], STATE_DIM, "input 1 (state_in)")
     if len(ins) == 3:
-        _check(ins[2], EVENT_DIM, "input 2 (event_type)")
+        _check_event_width(ins[2])
     _check(outs[0], ACT_DIM, "output 0 (action)")
     _check(outs[1], STATE_DIM, "output 1 (state_out)")
     return session
@@ -111,6 +129,7 @@ class OlympicsPlayer(Player):
         self._session: ort.InferenceSession | None = None
         self._names: list[str] = []
         self._state = np.zeros((1, STATE_DIM), np.float32)
+        self._event_width = 0
         self._event = np.zeros((1, EVENT_DIM), np.float32)
         self.load_error: str | None = None
         # Labels the API log; the referee's match_id carries the instance index as ":<i>".
@@ -118,7 +137,9 @@ class OlympicsPlayer(Player):
         self._step = 0
         try:
             self._session = _load_session()
-            self._names = [i.name for i in self._session.get_inputs()]
+            inputs = self._session.get_inputs()
+            self._names = [i.name for i in inputs]
+            self._event_width = _check_event_width(inputs[2]) if len(inputs) == 3 else 0
         except Exception as e:  # noqa: BLE001 — every load failure is the submission's fault
             self.load_error = f"{type(e).__name__}: {e}"
             print(f"submission rejected at load: {self.load_error}", flush=True)
@@ -134,9 +155,9 @@ class OlympicsPlayer(Player):
         # One-hot for the attempt's discipline. An unknown or absent name leaves it all zeros
         # rather than failing the attempt: the model can run without it, and a reset fault here
         # would be scored against a submission that did nothing wrong.
-        self._event = np.zeros((1, EVENT_DIM), np.float32)
+        self._event = np.zeros((1, max(self._event_width, 1)), np.float32)
         event = (config or {}).get("event")
-        if event in EVENT_ORDER:
+        if event in EVENT_ORDER and EVENT_ORDER.index(event) < self._event_width:
             self._event[0, EVENT_ORDER.index(event)] = 1.0
         self._match, self._step = match_id, 0
         _api("reset", match=match_id, player_index=player_index, event=event or "-", status="ok")

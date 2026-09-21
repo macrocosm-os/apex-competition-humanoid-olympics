@@ -114,7 +114,7 @@ jobs:
           r = json.load(open('/tmp/eval.json'))
           bad = {'player_error', 'invalid_action'}
           reasons = [c['terminal_reason'] for c in r['instances']]
-          assert r['n'] == 6, r
+          assert r['n'] == 7, r
           assert not (bad & set(reasons)), f"protocol broken, not just a weak policy: {reasons}"
           assert sum(c['steps'] for c in r['instances']) > 0, r
           print('ok:', reasons)
@@ -156,11 +156,11 @@ jobs:
           # Recording must not perturb the run it is recording.
           a, b = (json.load(open(p)) for p in ('/tmp/norec.json', '/tmp/rec.json'))
           assert a['instances'] == b['instances'], "--record changed the scored result"
-          assert b['history_files'] == 6, b.get('history_files')
+          assert b['history_files'] == 7, b.get('history_files')
           print('ok: identical with and without --record, raw_score', a['raw_score'])
           PY
           PYTHONPATH=. python tools/replay.py /tmp/history
-          PYTHONPATH=. python .github/scripts/check_replay_roundtrip.py /tmp/history 6
+          PYTHONPATH=. python .github/scripts/check_replay_roundtrip.py /tmp/history 7
 
       # Both miner-facing artifacts, plus the guarantee that failing to write one cannot turn a
       # scored round into a zero. No containers: the script drives the real referee against the

@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.6.0
+version: 0.7.0
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,11 +12,12 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# Pinned from the v0.6.0 release run (Actions run 35365784959), all four jobs green. Both digests
-# were resolved from ghcr by the v0.6.0 tag and cosign-verified: signature present, transparency
-# log entry verified, cert chain verified, issuer the GitHub OIDC endpoint, and the cert SAN this
-# file's `cosign_identity` at refs/tags/v0.6.0. Signing workflow sha 12dd9bd = v0.6.0^{commit}, so
-# the referee here scores the field events on margin rather than against a cap.
+# DIGESTS BELOW ARE STALE: the v0.6.0 build, kept only so this file stays syncable until the
+# v0.7.0 release run finishes. 0.7.0 changes BOTH images -- a seventh event and per-round hurdle
+# draws in the referee, a width-tolerant `event_type` in the player -- so a 0.7.0 spec on 0.6.0
+# images would run the old six-event meet and reject any 7-wide policy at load. Re-pin
+# both from the release run, resolved from ghcr by tag and `cosign verify`d against this file's
+# `cosign_identity` at refs/tags/v0.7.0.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:897eabc02d404839d057b453d7524e6ab98ad8c116cf53bc72361e094d1be119
@@ -25,8 +26,10 @@ image:
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
 # floats. The broad terrain preview now describes the active event's route, and
 # its seven forward channels report barrier heights rather than overhead
-# clearance. A policy MAY declare a third input, `event_type` [batch, 6], to be
-# told its discipline; two-input models remain valid and are unaffected.
+# clearance. A policy MAY declare a third input, `event_type` [batch, 1..7], to
+# be told its discipline; two-input models remain valid and are unaffected. Any
+# width up to the event count is accepted and new events are appended, so a
+# policy built for a shorter meet keeps its indices and needs no resubmission.
 submission:
   artifact_type: onnx
   max_size_mb: 15
@@ -75,7 +78,7 @@ entrypoints:
     command: ["python", "/app/launch.py", "--port", "8000"]
     network_disabled: false
     allow_internet: false
-    # A four-attempt meet has at most 40,000 control calls. The referee's
+    # A four-attempt meet has at most 54,400 control calls. The referee's
     # internal 840-second budget leaves time to persist a result.
     timeout_s: 1200
     http_api:

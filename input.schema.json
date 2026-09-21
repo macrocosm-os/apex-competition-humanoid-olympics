@@ -15,7 +15,7 @@
       "type": "integer",
       "const": 4,
       "default": 4,
-      "description": "Four attempts of each of the six disciplines: the fixed 24-attempt launch meet."
+      "description": "Four attempts of each of the seven disciplines: a 28-attempt meet."
     },
     "deadline_ms": {
       "type": "integer",

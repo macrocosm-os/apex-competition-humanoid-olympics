@@ -51,16 +51,33 @@ def test_the_referee_sends_the_event_name_and_nothing_else():
 def test_reset_builds_the_one_hot_the_env_would(event):
     player = _load_player_module()
     instance = player.OlympicsPlayer()
+    instance._event_width = EVENT_DIM          # a policy declaring the full-width input
     instance.reset(match_id="m:0", player_index=0, seed=0, config={"event": event})
     assert np.array_equal(instance._event, event_one_hot(event))
     assert instance._event.dtype == np.float32
     assert instance._event.shape == (1, EVENT_DIM)
 
 
+@pytest.mark.parametrize("width", range(1, len(EVENTS) + 1))
+def test_a_narrower_one_hot_keeps_the_indices_it_knows(width):
+    """A policy built for a shorter meet must keep working: events are appended, never reordered."""
+    player = _load_player_module()
+    instance = player.OlympicsPlayer()
+    instance._event_width = width
+    for i, event in enumerate(EVENTS):
+        instance.reset(match_id="m:0", player_index=0, seed=0, config={"event": event})
+        assert instance._event.shape == (1, width)
+        if i < width:
+            assert instance._event[0, i] == 1.0 and instance._event.sum() == 1.0
+        else:
+            assert not instance._event.any(), "an event it predates must read as all-zero"
+
+
 def test_an_unknown_or_absent_event_is_zeros_rather_than_a_fault():
     """A reset fault is scored against the submission, so it must not be our error to make."""
     player = _load_player_module()
     instance = player.OlympicsPlayer()
+    instance._event_width = EVENT_DIM
     for config in ({}, {"event": "tug_of_war"}, {"event": None}):
         instance.reset(match_id="m:0", player_index=0, seed=0, config=config)
         assert not instance._event.any(), f"config {config!r} produced a non-zero one-hot"

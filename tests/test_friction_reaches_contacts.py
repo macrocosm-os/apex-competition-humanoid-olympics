@@ -117,7 +117,7 @@ def test_every_launch_stratum_reaches_the_solver():
     would have passed. This is the assertion that actually pins the bug down.
     """
     tasks = event_instances(4, seed=12345, wind_max=8.0)
-    assert len(tasks) == 24, f"expected the 24-attempt launch meet, got {len(tasks)}"
+    assert len(tasks) == 4 * len(course.EVENTS), f"expected 4 per event, got {len(tasks)}"
 
     clamped, checked, asked_below_one = [], 0, 0
     for params in tasks:
