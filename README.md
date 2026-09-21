@@ -62,7 +62,7 @@ Submit one ONNX model, at most 15 MB, with exactly:
 ```
 inputs   obs        float32 [batch, 104]
          state_in   float32 [batch, 256]
-         event_type float32 [batch, 7]    OPTIONAL
+         event_type float32 [batch, 1..7] OPTIONAL
 outputs  action     float32 [batch, 12]
          state_out  float32 [batch, 256]
 ```
@@ -75,7 +75,7 @@ their effects.
 
 `event_type` is new in 0.5.0 and is **optional**: declare it as a third input and you receive a
 one-hot over `(sprint_100, sprint_400, hurdles_100, high_jump, long_jump, triple_jump, race_walk_200)`, constant
-for the attempt. Leave it out and nothing changes — two-input policies load and score exactly as
+for the attempt. Any width up to 7 is accepted: new events are appended, so a policy built for an earlier meet keeps its indices and reads only the newer events as all-zero. Leave it out and nothing changes — two-input policies load and score exactly as
 before, so no resubmission is required. Build one either way with
 `python tools/make_test_policy.py --event-input`.
 

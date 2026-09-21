@@ -14,8 +14,8 @@ resources:
 
 # DIGESTS BELOW ARE STALE: the v0.6.0 build, kept only so this file stays syncable until the
 # v0.7.0 release run finishes. 0.7.0 changes BOTH images -- a seventh event and per-round hurdle
-# draws in the referee, a 7-wide `event_type` in the player -- so a 0.7.0 spec on 0.6.0 images
-# would run the old six-event meet AND reject every policy that took the new input width. Re-pin
+# draws in the referee, a width-tolerant `event_type` in the player -- so a 0.7.0 spec on 0.6.0
+# images would run the old six-event meet and reject any 7-wide policy at load. Re-pin
 # both from the release run, resolved from ghcr by tag and `cosign verify`d against this file's
 # `cosign_identity` at refs/tags/v0.7.0.
 image:
@@ -26,10 +26,10 @@ image:
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
 # floats. The broad terrain preview now describes the active event's route, and
 # its seven forward channels report barrier heights rather than overhead
-# clearance. A policy MAY declare a third input, `event_type` [batch, 7], to be
-# told its discipline; two-input models remain valid and are unaffected. The
-# one-hot widens with the meet, so a policy that declared the 6-wide input for
-# 0.6.0 must be re-exported.
+# clearance. A policy MAY declare a third input, `event_type` [batch, 1..7], to
+# be told its discipline; two-input models remain valid and are unaffected. Any
+# width up to the event count is accepted and new events are appended, so a
+# policy built for a shorter meet keeps its indices and needs no resubmission.
 submission:
   artifact_type: onnx
   max_size_mb: 15

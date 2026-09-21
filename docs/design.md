@@ -211,6 +211,11 @@ rearrangement rather than a harder or easier meet. Through 0.6.0 the hurdles sat
 with monotonically rising heights, which meant position alone predicted the next height and the
 0.5.1 barrier channels added nothing a policy could not already infer. They are now load-bearing.
 
-Two consequences. `event_type` widens to `[batch, 7]`, so a policy that declares it must be
-re-exported; two-input policies are unaffected. And the meet's macro-average now divides by seven,
-so every score moves even where behaviour does not.
+`event_type` widens to `[batch, 7]`, but **not as a breaking change**: the player accepts any
+declared width up to `EVENT_DIM`, and new events are appended rather than reordered, so a policy
+built for the six-event meet keeps identical inputs on all six and reads the race walk as
+all-zero. Verified end to end — a 6-wide and a 7-wide graph produce identical actions on
+`sprint_100` and `triple_jump`. Two-input policies are untouched.
+
+The meet's macro-average now divides by seven, so every score moves even where behaviour does
+not.
