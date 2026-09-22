@@ -8,7 +8,8 @@
 # v0.1 repeats its four balanced condition strata across round seeds. The 20-seed check confirms
 # that the fixed absolute score remains stable in the actual runtime, alongside two deliberately
 # weaker references.
-# The resulting mean, variance, ordering, resource, and wall-time evidence is recorded in HANDOFF.
+# The resulting mean, variance, ordering, resource, and wall-time evidence goes in the onboarding
+# submission, not into this repo.
 name: measure-baseline
 
 # Dispatch-only as of 0.2.0. This measured `baseline_raw_score`, which is now 0.0 by choice, so

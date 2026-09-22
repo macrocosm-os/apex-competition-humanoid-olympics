@@ -163,5 +163,6 @@ tools/     local evaluation, policy export, rendering, and replay
 docs/      design and calibration notes
 ```
 
-The native-amd64 20-seed baseline calibration is recorded in `HANDOFF.md`. Before onboarding, the
-signed player/referee image digests must replace the temporary values in `spec.yaml`.
+The native-amd64 20-seed baseline calibration is submitted privately at onboarding rather than
+kept in this repo. Before onboarding, the signed player/referee image digests must replace the
+temporary values in `spec.yaml`.
