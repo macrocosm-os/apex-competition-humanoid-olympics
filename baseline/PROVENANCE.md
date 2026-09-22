@@ -2,7 +2,7 @@
 
 `baseline.onnx` is a reproducible integration policy, not an Olympics-trained contender. It must
 score above zero through the actual player/referee loop, but it is deliberately not a leaderboard
-bar until the native-amd64 calibration evidence in `HANDOFF.md` is accepted at onboarding.
+bar until the native-amd64 calibration evidence, submitted privately, is accepted at onboarding.
 
 ## Immutable inputs
 

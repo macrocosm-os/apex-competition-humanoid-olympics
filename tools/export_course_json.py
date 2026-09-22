@@ -18,8 +18,9 @@ import json
 import pathlib
 from dataclasses import asdict
 
-from env.course import (COLOR, EVENTS, EVENT_LABELS, HIGH_JUMP_BARS_M, PLINTH_TOP, TRACK_HALF_W,
-                        build_event)
+from env.course import (COLOR, EVENTS, EVENT_LABELS, HIGH_JUMP_BARS_M, HURDLE_FIRST_MIN_M,
+                        HURDLE_HEIGHTS_M, HURDLE_LAST_MAX_M, HURDLE_MIN_GAP_M, PLINTH_TOP,
+                        TRACK_HALF_W, build_event)
 
 
 def surface_json(surface) -> dict:
@@ -45,6 +46,16 @@ def event_json(event: str) -> dict:
     }
     if layout.challenge:
         result["challenge"] = dict(layout.challenge)
+    if event == "hurdles_100":
+        # The surfaces above are ONE draw. A renderer showing them as the course would be
+        # showing a layout no attempt is guaranteed to run.
+        result["draw"] = {
+            "note": "placement and height order are drawn per attempt",
+            "count": len(HURDLE_HEIGHTS_M),
+            "heights_m": list(HURDLE_HEIGHTS_M),
+            "window_m": [HURDLE_FIRST_MIN_M, HURDLE_LAST_MAX_M],
+            "min_gap_m": HURDLE_MIN_GAP_M,
+        }
     if event == "high_jump":
         result["variants"] = {
             "bar_height_m": list(HIGH_JUMP_BARS_M),
