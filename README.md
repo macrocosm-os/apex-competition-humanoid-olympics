@@ -20,7 +20,7 @@ all-round performance is intended to be a meaningful breakthrough.
 |---|---|
 | 100 m sprint | straight-line acceleration and top speed |
 | 400 m circular sprint | sustained pace, local route following, and cornering |
-| 100 m hurdles | high-speed repeated clearance |
+| 100 m hurdles | high-speed repeated clearance, on a course redrawn every attempt |
 | high jump | a clean vertical clearance and crossing |
 | long jump | approach, take-off, flight, and safe landing |
 | triple jump | an ordered hop, step, and final landing |
@@ -52,6 +52,13 @@ The round result is:
 ```
 raw_score = mean(event_mean[100m, 400m, hurdles, high jump, long jump, triple jump, 200m walk])
 ```
+
+**Hurdle placement and height order are randomised.** Every attempt draws its own course: the same
+ten heights in a shuffled order, positions drawn between 10 m and 90 m with at least 6 m between
+barriers. The four attempts in a round are four different courses, so there is no such thing as
+"the" hurdles layout — `docs/course-layouts.json` carries one sample and marks it as such. Each
+attempt reports the course it actually ran as `hurdle_x_0..9` / `hurdle_h_0..9` on its `challenge`,
+in `result.json` and in its history file; that is the only correct source for a replay or a render.
 
 The referee records every event attempt in `result.json` metadata and writes a replayable history
 file for it. The same balanced conditions repeat for every launch round and are held fixed for all

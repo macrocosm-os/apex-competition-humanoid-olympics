@@ -11,6 +11,7 @@
     "full_width_m": 1.7,
     "half_width_m": 0.85
   },
+  "surfaces": "static per event, except where `surfaces_are_a_sample` is set",
   "events": [
     {
       "id": "sprint_100",
@@ -2441,8 +2442,10 @@
           ]
         }
       ],
+      "surfaces_are_a_sample": true,
       "draw": {
-        "note": "placement and height order are drawn per attempt",
+        "note": "Hurdle placement and height order are RANDOMISED per attempt. The surfaces in this file are one sample, not the course any attempt runs. Do not render them as the course.",
+        "authoritative_source": "each attempt reports the layout it ran as hurdle_x_0..9 / hurdle_h_0..9 on conditions.challenge in its history record, and in result.json's per-task challenge",
         "count": 10,
         "heights_m": [
           0.55,

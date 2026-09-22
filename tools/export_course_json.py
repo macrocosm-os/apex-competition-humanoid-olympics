@@ -47,11 +47,24 @@ def event_json(event: str) -> dict:
     if layout.challenge:
         result["challenge"] = dict(layout.challenge)
     if event == "hurdles_100":
-        # The surfaces above are ONE draw. A renderer showing them as the course would be
-        # showing a layout no attempt is guaranteed to run.
+        # The surfaces above are ONE draw. A renderer showing them as the course would be showing
+        # a layout no attempt is guaranteed to run -- and with four attempts drawn independently,
+        # it would be wrong for three of every four.
+        result["surfaces_are_a_sample"] = True
         result["draw"] = {
-            "note": "placement and height order are drawn per attempt",
+            "note": (
+                "Hurdle placement and height order are RANDOMISED per attempt. The surfaces in "
+                "this file are one sample, not the course any attempt runs. Do not render them "
+                "as the course."
+            ),
+            "authoritative_source": (
+                "each attempt reports the layout it ran as hurdle_x_0..9 / hurdle_h_0..9 on "
+                "conditions.challenge in its history record, and in result.json's per-task "
+                "challenge"
+            ),
             "count": len(HURDLE_HEIGHTS_M),
+            # What the draw holds fixed: the same ten heights every attempt, in a shuffled order,
+            # inside this window, never closer together than the minimum gap.
             "heights_m": list(HURDLE_HEIGHTS_M),
             "window_m": [HURDLE_FIRST_MIN_M, HURDLE_LAST_MAX_M],
             "min_gap_m": HURDLE_MIN_GAP_M,
@@ -75,6 +88,9 @@ def export() -> dict:
             "deck_top_z_m": PLINTH_TOP,
         },
         "lane": {"full_width_m": 2 * TRACK_HALF_W, "half_width_m": TRACK_HALF_W},
+        # Static geometry only. An event carrying `surfaces_are_a_sample` draws part of its course
+        # per attempt, and its real layout travels on the attempt, not in this file.
+        "surfaces": "static per event, except where `surfaces_are_a_sample` is set",
         "events": [event_json(event) for event in EVENTS],
     }
 
