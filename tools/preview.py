@@ -40,6 +40,11 @@ def _lit_model(event: str, frictions, challenge=None, seed: int = 0) -> mujoco.M
     model = mujoco.MjModel.from_xml_string(xml, _mesh_assets())
     for index, value in enumerate(frictions):
         model.geom(f"course_{index}").friction[0] = value
+    # The far clip plane is zfar * extent, and extent is driven by the robot (~1.2 m), so the
+    # default 50 puts it at 60 m. A camera pulled back far enough to frame a long straight course
+    # then sees nothing at all -- the 200 m walk rendered pure black. Reach past the finish.
+    model.vis.map.zfar = max(model.vis.map.zfar,
+                             3.0 * max(layout.finish, 20.0) / max(model.stat.extent, 1e-6))
     return model
 
 
