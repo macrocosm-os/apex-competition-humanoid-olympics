@@ -12,15 +12,14 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# DIGESTS BELOW ARE STALE: the v0.7.0 build, kept only so this file stays syncable until the
-# v0.7.1 release run finishes. 0.7.1 changes the REFEREE: each hurdles attempt now reports the
-# barrier layout it ran, so the history file and result.json carry the course. A 0.7.1 spec on
-# 0.7.0 images would keep writing histories with no layout in them. Re-pin both from the release
-# run, resolved from ghcr by tag and `cosign verify`d against this file's `cosign_identity` at
-# refs/tags/v0.7.1.
+# Pinned from the v0.7.1 release run (Actions run 35744269065), all four jobs green, 94 tests.
+# Both digests were resolved from ghcr by the v0.7.1 tag and cosign-verified: signature present,
+# transparency log entry verified, cert chain verified, issuer the GitHub OIDC endpoint, and the
+# cert SAN this file's `cosign_identity` at refs/tags/v0.7.1. Signing workflow sha 2f0b741 =
+# v0.7.1^{commit}, so each hurdles attempt in these images reports the layout it ran.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
-  digest: sha256:e67c4c8ba597792430167f90b17fab9363f0824a6552c31e6c6b62bafaecb22c
+  digest: sha256:fdfe1b893fd3080759d6fc970b4417e6d825d8f28c721300edcec342f6b03568
 
 # A recurrent ONNX controller receives the same 104-float sensory contract as
 # its predecessor and emits 12 joint-position targets plus 256 opaque state
@@ -90,7 +89,7 @@ referee:
   protocol: gym_v1
   image:
     ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-referee
-    digest: sha256:ace021d58a55aae60f385801f5257bbf2a9d67014c813ff66b663f2aa92f7ce0
+    digest: sha256:965ebfb1fa7e3475ab77b7210fa4460c21c7805e29a39affc176ee85050ad3ce
   timeout_s: 900
 
 signature:
