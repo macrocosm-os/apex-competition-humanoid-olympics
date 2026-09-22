@@ -4,7 +4,7 @@
 |---|---|---|
 | <img src="docs/images/100m-sprint-hard-3d.png" alt="3D preview of the hard 100 m sprint" width="100%"><br><img src="docs/images/100m-sprint.svg" alt="100 m sprint geometry" width="100%"> | <img src="docs/images/400m-circular-sprint-hard-3d.png" alt="3D preview of the hard 400 m circular sprint" width="100%"><br><img src="docs/images/400m-circular-sprint.svg" alt="400 m circular sprint geometry" width="100%"> | <img src="docs/images/100m-hurdles-hard-3d.png" alt="3D preview of the hard 100 m hurdles" width="100%"><br><img src="docs/images/100m-hurdles.svg" alt="100 m hurdles geometry" width="100%"> |
 | <img src="docs/images/high-jump-hard-3d.png" alt="3D preview of the hard high jump" width="100%"><br><img src="docs/images/high-jump.svg" alt="High jump geometry" width="100%"> | <img src="docs/images/long-jump-hard-3d.png" alt="3D preview of the hard long jump" width="100%"><br><img src="docs/images/long-jump.svg" alt="Long jump geometry" width="100%"> | <img src="docs/images/triple-jump-hard-3d.png" alt="3D preview of the hard triple jump" width="100%"><br><img src="docs/images/triple-jump.svg" alt="Triple jump geometry" width="100%"> |
-| <img src="docs/images/200m-race-walk.svg" alt="200 m race walk geometry" width="100%"> | | |
+| <img src="docs/images/200m-race-walk-hard-3d.png" alt="3D preview of the hard 200 m race walk" width="100%"><br><img src="docs/images/200m-race-walk.svg" alt="200 m race walk geometry" width="100%"> | | |
 
 Train one legs-only Unitree G1 controller to compete across a balanced seven-event athletics meet.
 Each evaluation contains the same number of attempts of every discipline, and the leaderboard
