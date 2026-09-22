@@ -212,6 +212,13 @@ rearrangement, never a harder or easier one. Through 0.6.0 the hurdles sat on a 
 monotonically rising heights, which meant position alone predicted the next height and the 0.5.1
 barrier channels added nothing a policy could not already infer. They are now load-bearing.
 
+Each attempt reports the layout it ran, as `hurdle_x_N`/`hurdle_h_N` on its `challenge`. That is
+the same channel `bar_height_m` uses, so it reaches `result.json` and the history record without a
+new field, and anything rebuilding the scene -- the front end, `tools/replay.py` -- gets the course
+that was scored. It has to travel this way: placement comes from the episode seed, and the seed
+reaches no miner-visible surface, so a consumer holding only a history file could not redraw it.
+Geometry is a reported condition, like friction and wind; the seed is not.
+
 Drawing per attempt rather than per round is deliberate. Cross-round score spread is already the
 same order as the 1% takeover threshold, and averaging four independent layouts gives an event
 mean with a quarter of the layout variance that four runs on one layout would carry — so the

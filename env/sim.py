@@ -13,7 +13,8 @@ import numpy as np
 
 from .course import (EVENT_MAX_STEPS, EVENTS, GEOM_PREFIX, HIGH_JUMP_BARS_M, OVERHEAD_GROUP,
                      PLINTH_TOP, TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRACK_HALF_W,
-                     WORLD_GROUP, EventLayout, build_event, course_xml_fragment, sample_frictions)
+                     WORLD_GROUP, EventLayout, build_event, course_xml_fragment, hurdle_challenge,
+                     hurdle_layout, sample_frictions)
 
 ASSETS = pathlib.Path(__file__).parent / "assets"
 
@@ -170,7 +171,12 @@ def instance_spec(event: str, attempt: int, seed: int, wind_max: float = WIND_MA
     # Per-round too, so the within-stratum friction jitter and the reset perturbation move with
     # the meet instead of replaying one fixed set of 24 starts.
     episode_rng = np.random.default_rng([event_index, attempt, round_key, 0x5151])
-    return InstanceParams(event=event, attempt=attempt, seed=int(episode_rng.integers(1 << 31)),
+    episode_seed = int(episode_rng.integers(1 << 31))
+    if event == "hurdles_100":
+        # Recorded on the attempt rather than redrawn downstream: the history file is what the
+        # front end and `tools/replay.py` rebuild the course from, and neither has the seed.
+        challenge.update(hurdle_challenge(hurdle_layout(episode_seed)))
+    return InstanceParams(event=event, attempt=attempt, seed=episode_seed,
                           friction_level=friction,
                           wind_speed=wind_speed, wind_dir=wind_dir, challenge=challenge)
 

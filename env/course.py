@@ -152,11 +152,34 @@ def hurdle_layout(seed: int) -> list[tuple[float, float]]:
     return [(round(x, 3), h) for x, h in zip(xs, heights, strict=True)]
 
 
-def _hurdles_100(seed: int) -> EventLayout:
+def hurdle_challenge(layout: list[tuple[float, float]]) -> dict[str, float]:
+    """The drawn layout as scalar challenge keys, so it rides along with the attempt."""
+    out: dict[str, float] = {}
+    for i, (x, height) in enumerate(layout):
+        out[f"hurdle_x_{i}"] = float(x)
+        out[f"hurdle_h_{i}"] = float(height)
+    return out
+
+
+def hurdle_layout_from_challenge(challenge: Mapping[str, float]) -> list[tuple[float, float]] | None:
+    """Recover a layout written by `hurdle_challenge`, or None if it is not there in full."""
+    pairs = []
+    for i in range(len(HURDLE_HEIGHTS_M)):
+        x, height = challenge.get(f"hurdle_x_{i}"), challenge.get(f"hurdle_h_{i}")
+        if x is None or height is None:
+            return None
+        pairs.append((float(x), float(height)))
+    return pairs
+
+
+def _hurdles_100(challenge: Mapping[str, float], seed: int) -> EventLayout:
     surfaces = _straight(100.0)
+    # The attempt's own layout when it carries one, so a replay or a renderer rebuilds the course
+    # that was scored rather than redrawing a different one.
+    layout = hurdle_layout_from_challenge(challenge) or hurdle_layout(seed)
     # Each barrier overhangs the lane boundary so a runner cannot skim around its end while
     # leaving its pelvis in bounds.
-    for x, height in hurdle_layout(seed):
+    for x, height in layout:
         surfaces.append(Surface("hurdle", x, 0.0, PLINTH_TOP + height / 2,
                                 0.12, TRACK_HALF_W + 0.20, height / 2,
                                 walkable=False))
@@ -239,7 +262,7 @@ def build_event(event: str, challenge: Mapping[str, float] | None = None,
     if event == "race_walk_200":
         return _race_walk_200()
     if event == "hurdles_100":
-        return _hurdles_100(seed)
+        return _hurdles_100(challenge, seed)
     if event == "high_jump":
         return _high_jump(challenge)
     if event == "long_jump":

@@ -1,6 +1,6 @@
 schema: apex.competition.v1
 id: humanoid_olympics
-version: 0.7.0
+version: 0.7.1
 display_name: "Humanoid Olympics"
 kind: solo
 process_type: cpu
@@ -12,11 +12,12 @@ resources:
   mem_limit: 2Gi
   gpu_count: 0
 
-# Pinned from the v0.7.0 release run (Actions run 35642647431), all four jobs green, 85 tests.
-# Both digests were resolved from ghcr by the v0.7.0 tag and cosign-verified: signature present,
-# transparency log entry verified, cert chain verified, issuer the GitHub OIDC endpoint, and the
-# cert SAN this file's `cosign_identity` at refs/tags/v0.7.0. Signing workflow sha 21de645 =
-# v0.7.0^{commit}, so these images run the seven-event meet with per-round hurdle draws.
+# DIGESTS BELOW ARE STALE: the v0.7.0 build, kept only so this file stays syncable until the
+# v0.7.1 release run finishes. 0.7.1 changes the REFEREE: each hurdles attempt now reports the
+# barrier layout it ran, so the history file and result.json carry the course. A 0.7.1 spec on
+# 0.7.0 images would keep writing histories with no layout in them. Re-pin both from the release
+# run, resolved from ghcr by tag and `cosign verify`d against this file's `cosign_identity` at
+# refs/tags/v0.7.1.
 image:
   ref: ghcr.io/macrocosm-os/apex-competition-humanoid-olympics-player
   digest: sha256:e67c4c8ba597792430167f90b17fab9363f0824a6552c31e6c6b62bafaecb22c
