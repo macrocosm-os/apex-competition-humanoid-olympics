@@ -13,10 +13,11 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from env import OlympicsSim, event_instances, instance_score, instance_spec
+from env import EVENTS, OlympicsSim, event_instances, instance_score, instance_spec
 from env.scoring import REFERENCE_FRACTION
 from env.course import (HIGH_JUMP_BARS_M, HURDLE_FIRST_MIN_M, HURDLE_HEIGHTS_M,
                         HURDLE_LAST_MAX_M, HURDLE_MIN_GAP_M, LONG_LANDING_M, LONG_TAKEOFF_M,
+                        hurdle_layout_from_challenge,
                         TAKEOFF_BOARD_AFTER_M, TAKEOFF_BOARD_BEFORE_M, TRIPLE_LANDING_M,
                         TRIPLE_TAKEOFF_M, build_event)
 from env.sim import (HIGH_CLEARANCE_MARGIN_M, HIGH_LANDING_OFFSET_M, MIN_AIRBORNE_STEPS,
@@ -60,15 +61,21 @@ assert 'contype="0" conaffinity="0"' in _scene_xml(long_layout)
 # spaced friction and wind strata spanning the full envelope, every round.
 assert event_instances(4, 1) == event_instances(4, 1)
 assert event_instances(4, 1) != event_instances(4, 20)
-for event in ("sprint_100", "sprint_400", "hurdles_100", "high_jump", "long_jump", "triple_jump"):
+def _fixed_challenge(challenge):
+    """The published part of an attempt's challenge -- everything except the drawn hurdle layout."""
+    return {k: v for k, v in challenge.items() if not k.startswith("hurdle_")}
+
+
+for event in EVENTS:
     for attempt in range(4):
         assert instance_spec(event, attempt, seed=1) == instance_spec(event, attempt, seed=1)
         assert instance_spec(event, attempt, seed=1) != instance_spec(event, attempt, seed=20)
     for seed in (1, 20, 987654321):
         specs = [instance_spec(event, attempt, seed=seed) for attempt in range(4)]
-        # The high-jump bar ladder is the published difficulty scale, not a condition.
-        assert [s.challenge for s in specs] == [instance_spec(event, a, seed=1).challenge
-                                                for a in range(4)]
+        # The high-jump bar ladder is the published difficulty scale, not a condition. The hurdle
+        # layout IS a condition and is excluded -- it is asserted to move, just below.
+        assert [_fixed_challenge(s.challenge) for s in specs] == [
+            _fixed_challenge(instance_spec(event, a, seed=1).challenge) for a in range(4)]
         for levels in ([s.friction_level for s in specs],
                        [s.wind_speed / WIND_MAX_MS for s in specs]):
             assert len(set(levels)) == 4, (event, seed, levels)
@@ -183,6 +190,26 @@ for _ in range(MIN_SUPPORT_STEPS):
     triple._observe_triple_jump(TRIPLE_LANDING_M, TRIPLE_TAKEOFF_M, {"left": {"sand"}})
 assert triple._event_reason == "landed" and triple._triple_phase == 3
 assert math.isclose(triple._jump_distance, TRIPLE_LANDING_M - TRIPLE_TAKEOFF_M)
+
+# The hurdle layout rides on the attempt's challenge so the history file, the front end and
+# tools/replay.py all rebuild the course that was scored. It must move between rounds, stay
+# inside the published window, and keep the fixed height set.
+for attempt in range(4):
+    layouts = [hurdle_layout_from_challenge(instance_spec("hurdles_100", attempt, seed=s).challenge)
+               for s in (1, 20, 987654321)]
+    assert all(layout is not None for layout in layouts)
+    assert len({tuple(layout) for layout in layouts}) == len(layouts), "layout did not move"
+    for layout in layouts:
+        xs = [x for x, _ in layout]
+        assert xs == sorted(xs) and xs[0] >= HURDLE_FIRST_MIN_M - 1e-6
+        assert xs[-1] <= HURDLE_LAST_MAX_M + 1e-6
+        assert min(b - a for a, b in zip(xs, xs[1:])) >= HURDLE_MIN_GAP_M - 1e-6
+        assert sorted(h for _, h in layout) == sorted(HURDLE_HEIGHTS_M)
+    # Rebuilding from the challenge alone -- no seed -- must give the scored course.
+    spec = instance_spec("hurdles_100", attempt, seed=20)
+    rebuilt = [(round(s.x, 3), round(s.hz * 2, 2))
+               for s in build_event("hurdles_100", spec.challenge).surfaces if s.kind == "hurdle"]
+    assert rebuilt == [(round(x, 3), h) for x, h in hurdle_layout_from_challenge(spec.challenge)]
 
 # A minimum legal landing earns the finish band and nothing more.
 assert math.isclose(instance_score("long_jump", "landed", 0, 0, 1,
